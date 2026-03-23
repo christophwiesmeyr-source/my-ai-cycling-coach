@@ -4,67 +4,26 @@ import numpy as np
 from dataclasses import dataclass
 
 
-@dataclass
-class Statistics:
-    """Container for calculated statistics"""
-    metric: str
-    count: int
-    mean: float
-    stddev: float
-    min: float
-    max: float
-    duration_seconds: float
-    
-    def __str__(self) -> str:
-        return (
-            f"{self.metric.upper()}\n"
-            f"  Count: {self.count}\n"
-            f"  Mean: {self.mean:.1f}\n"
-            f"  StdDev: {self.stddev:.1f}\n"
-            f"  Min: {self.min:.1f}\n"
-            f"  Max: {self.max:.1f}\n"
-            f"  Duration: {self.duration_seconds:.1f}s ({self.duration_seconds/60:.1f}m)"
-        )
+def rolling_max(data: np.ndarray, window: int) -> float:
+    """Compute the maximum of rolling averages over a window."""
+    if len(data) == 0 or window <= 0:
+        return 0.0
+    data_clean = data[~np.isnan(data)]
+    if window > len(data_clean):
+        return np.nan
+    cumsum = np.concatenate(([0.0], np.cumsum(data_clean)))
+    win_sum = cumsum[window:] - cumsum[:-window]
+    rolling_avgs = win_sum / window
+    return float(np.max(rolling_avgs))
 
 
 class StatisticsCalculator:
-    """Calculates statistics for activity data selections"""
+    """Calculates specific statistics for activity data selections"""
     
     @staticmethod
-    def calculate_stats(data: np.ndarray, duration_seconds: float) -> Optional[Statistics]:
+    def calculate_specific_stats(activity, start_idx: int, end_idx: int) -> dict:
         """
-        Calculate statistics for a data array
-        
-        Args:
-            data: NumPy array of values
-            duration_seconds: Duration of the selection in seconds
-            
-        Returns:
-            Statistics object or None if data is empty
-        """
-        if len(data) == 0 or np.all(np.isnan(data)):
-            return None
-        
-        # Filter out NaN values
-        valid_data = data[~np.isnan(data)]
-        
-        if len(valid_data) == 0:
-            return None
-        
-        return Statistics(
-            metric='',
-            count=len(valid_data),
-            mean=float(np.mean(valid_data)),
-            stddev=float(np.std(valid_data)),
-            min=float(np.min(valid_data)),
-            max=float(np.max(valid_data)),
-            duration_seconds=duration_seconds
-        )
-    
-    @staticmethod
-    def calculate_multiple_stats(activity, start_idx: int = 0, end_idx: int = -1) -> dict[str, Statistics]:
-        """
-        Calculate statistics for all available metrics in a time range
+        Calculate specific statistics for DISTANCE, POWER, HEART RATE, Total Time, and Total Moving Time.
         
         Args:
             activity: Activity object
@@ -72,23 +31,66 @@ class StatisticsCalculator:
             end_idx: End index (exclusive)
             
         Returns:
-            Dictionary mapping metric names to Statistics objects
+            Dictionary with keys like 'Distance Total', 'Power Max', etc., each as [value, unit]
         """
-        stats = {}
+        out = {}
+        time_array = activity.get_time_array()
+
+        if end_idx == -1:
+            end_idx = len(time_array)
         
-        # Calculate duration for this selection
-        time_array = activity.get_time_array(start_idx, end_idx)
-        if len(time_array) > 0:
-            duration = time_array[-1] - time_array[0]
+        if len(time_array) == 0 or start_idx < 0 or end_idx > len(time_array) or start_idx >= end_idx:
+            return out
+        
+        # Calculate sampling rate (dt in seconds per sample)
+        if len(time_array) < 2:
+            dt = 1.0
         else:
-            duration = 0
+            dt = time_array[1] - time_array[0]
         
-        # Calculate stats for each available metric
-        for metric in activity.available_metrics:
-            data = activity.get_time_series(metric, start_idx, end_idx)
-            metric_stats = StatisticsCalculator.calculate_stats(data, duration)
-            if metric_stats:
-                metric_stats.metric = metric
-                stats[metric] = metric_stats
+        for metric in ["distance", "power", "heart_rate"]:
+            if metric not in activity.available_metrics:
+                continue
+            
+            data = np.asarray(activity.get_time_series(metric))
+            data = data[:len(time_array)]  # Align with time_array
+            
+            part = data[start_idx:end_idx]
+            if len(part) == 0:
+                continue
+            
+            if metric == "distance":
+                # Total distance from full data
+                out["Distance Total"] = [float(data[-1])/1000 if len(data) > 0 else 0.0, "km"]
+                # Start and end distance from slice
+                out["Distance Start"] = [float(part[0])/1000, "km"]
+                out["Distance End"] = [float(part[-1])/1000, "km"]
+            elif metric == "power":
+                # Max and avg power from slice
+                out["Power Max"] = [float(np.nanmax(part)), "W"]
+                out["Power Avg"] = [float(np.nanmean(part)), "W"]
+                # Rolling max averages from slice
+                for secs in (10, 60, 600, 1200):
+                    window_samples = max(1, int(secs / dt))
+                    if secs == 60:
+                        out[f"Power 1min Max"] = [rolling_max(part, window_samples), "W"]
+                    elif secs == 600:
+                        out[f"Power 10min Max"] = [rolling_max(part, window_samples), "W"]
+                    elif secs == 1200:
+                        out[f"Power 20min Max"] = [rolling_max(part, window_samples), "W"]
+                    else:
+                        out[f"Power {secs}s Max"] = [rolling_max(part, window_samples), "W"]
+            elif metric == "heart_rate":
+                # Min, max, avg from slice
+                out["HR min"] = [float(np.nanmin(part)), "bpm"]
+                out["HR max"] = [float(np.nanmax(part)), "bpm"]
+                out["HR avg"] = [float(np.nanmean(part)), "bpm"]
         
-        return stats
+        # Total Time for the slice
+        if len(time_array) > start_idx:
+            total_time = time_array[end_idx - 1] - time_array[start_idx]
+            out["Total Time"] = [total_time, "s"]
+        else:
+            out["Total Time"] = [0, "s"]
+        
+        return out

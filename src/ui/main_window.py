@@ -1,5 +1,4 @@
 """Main UI window for FIT data visualization"""
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +10,7 @@ from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 
 from src.data import FITParser, Activity
-from src.analysis import StatisticsCalculator, Statistics
+from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
 
 
@@ -231,12 +230,12 @@ class MainWindow(QMainWindow):
         self.selection_stats_text.setText(statistics_string)
         
     def _format_stats_output(self, start_idx: int, end_idx: int) -> str:
-        stats = StatisticsCalculator.calculate_multiple_stats(
+        stats = StatisticsCalculator.calculate_specific_stats(
             self.current_activity, start_idx, end_idx
         )
 
-        output = f"Range: {start_idx} to {end_idx} ({end_idx - start_idx} points)\n\n"
-        for metric, stat in stats.items():
-            output += str(stat) + "\n\n"
+        output = ""
+        for stat_name, value in stats.items():
+            output += f"{stat_name}: {value[0]:0.2f} {value[1]}\n"
 
         return output

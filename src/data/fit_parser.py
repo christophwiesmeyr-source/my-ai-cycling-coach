@@ -133,4 +133,4 @@ class FITParser:
             List of Path objects for .fit files found
         """
         directory = Path(directory)
-        return sorted(directory.glob('*.fit')) + sorted(directory.glob('**/*.fit'))
+        return sorted(directory.glob('**/*.fit'))

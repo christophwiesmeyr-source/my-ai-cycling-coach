@@ -62,7 +62,7 @@ class StatisticsCalculator:
         )
     
     @staticmethod
-    def calculate_multiple_stats(activity, start_idx: int, end_idx: int) -> dict[str, Statistics]:
+    def calculate_multiple_stats(activity, start_idx: int = 0, end_idx: int = -1) -> dict[str, Statistics]:
         """
         Calculate statistics for all available metrics in a time range
         

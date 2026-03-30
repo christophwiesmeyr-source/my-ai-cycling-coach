@@ -1,4 +1,5 @@
 """Statistics calculator for activity data analysis"""
+import datetime
 from typing import Optional
 import numpy as np
 from dataclasses import dataclass
@@ -89,7 +90,9 @@ class StatisticsCalculator:
         # Total Time for the slice
         if len(time_array) > start_idx:
             total_time = time_array[end_idx - 1] - time_array[start_idx]
-            out["Total Time"] = [total_time, "s"]
+            duration = datetime.timedelta(seconds=total_time)
+            time_text = str(duration) if activity.duration_seconds else "N/A"
+            out["Total Time"] = [time_text, ""]
         else:
             out["Total Time"] = [0, "s"]
         

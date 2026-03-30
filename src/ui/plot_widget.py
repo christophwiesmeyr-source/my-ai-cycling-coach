@@ -23,14 +23,23 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         self.secondary_metric: Optional[str] = None
 
         self.setBackground('w')
-        
-        # Create plots
-        self.plot_primary = self.addPlot(row=0, col=0, title="Primary Metric")
-        self.plot_secondary = self.addPlot(row=1, col=0, title="Secondary Metric")
-        
-        # Link the x-axis between plots for synchronized zooming
-        self.plot_secondary.setXLink(self.plot_primary)
-        
+
+        # Main plot (primary metric)
+        self.plot = self.addPlot(row=0, col=0, title="Metrics")
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot.setLabel('bottom', 'Time (s)')
+
+        # Secondary y-axis viewbox
+        self.plot.showAxis('right')
+        self.plot.getAxis('right').setLabel('')
+        self.secondary_view = pg.ViewBox()
+        self.plot.scene().addItem(self.secondary_view)
+        self.plot.getAxis('right').linkToView(self.secondary_view)
+        self.secondary_view.setXLink(self.plot)
+
+        # Keep the views aligned when resizing
+        self.plot.getViewBox().sigResized.connect(self._update_views)
+
         # Data lines
         self.line_primary: Optional[pg.PlotDataItem] = None
         self.line_secondary: Optional[pg.PlotDataItem] = None
@@ -38,22 +47,17 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         # Selection region
         self.selection_region = pg.LinearRegionItem()
         self.selection_region.setZValue(10)
-        self.plot_primary.addItem(self.selection_region)
-        
-        # Set colors
-        self._setup_colors()
+        self.plot.addItem(self.selection_region)
         
         # Connect selection change
         self.selection_region.sigRegionChangeFinished.connect(self._on_selection_changed)
     
-    def _setup_colors(self):
-        """Setup color scheme"""
-        
-        # Set grid
-        self.plot_primary.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_secondary.showGrid(x=True, y=True, alpha=0.3)
+    def _update_views(self):
+        """Keep secondary view geometry and axis sync with primary plot"""
+        self.secondary_view.setGeometry(self.plot.getViewBox().sceneBoundingRect())
+        self.secondary_view.linkedViewChanged(self.plot.getViewBox(), self.secondary_view.XAxis)
     
-    def plot_activity(self, activity: Activity, primary_metric: str, secondary_metric: str):
+    def plot_activity(self, activity: Activity, primary_metric: Optional[str], secondary_metric: Optional[str]):
         """
         Plot activity data
         
@@ -66,48 +70,53 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         self.primary_metric = primary_metric
         self.secondary_metric = secondary_metric
         
-        # Clear previous plots
-        self.plot_primary.clear()
-        self.plot_secondary.clear()
-        
-        # Re-add selection region
-        self.plot_primary.addItem(self.selection_region)
-        
+        # Clear previous plot data
+        self.plot.clear()
+        self.secondary_view.clear()
+
+        # Re-add selection region to the primary plot
+        self.plot.addItem(self.selection_region)
+
         # Get time array
         time_array = activity.get_time_array()
-        
+
         if len(time_array) == 0:
             return
-        
-        # Plot primary metric
+
+        # Plot primary metric on left y-axis
         if primary_metric and primary_metric in activity.available_metrics:
             data = activity.get_time_series(primary_metric)
-            self.line_primary = self.plot_primary.plot(
+            self.line_primary = self.plot.plot(
                 time_array, data,
                 pen=pg.mkPen(color=QColor(25, 118, 210), width=2),
                 name=primary_metric
             )
-            self.plot_primary.setLabel('left', primary_metric.replace('_', ' ').title())
-            self.plot_primary.setLabel('bottom', 'Time (s)')
-        
-        # Plot secondary metric
+            self.plot.setLabel('left', primary_metric.replace('_', ' ').title())
+        else:
+            self.line_primary = None
+            self.plot.setLabel('left', '')
+
+        # Plot secondary metric on right y-axis (optional)
         if secondary_metric and secondary_metric in activity.available_metrics:
             data = activity.get_time_series(secondary_metric)
-            self.line_secondary = self.plot_secondary.plot(
+            self.line_secondary = pg.PlotDataItem(
                 time_array, data,
                 pen=pg.mkPen(color=QColor(244, 67, 54), width=2),
                 name=secondary_metric
             )
-            self.plot_secondary.setLabel('left', secondary_metric.replace('_', ' ').title())
-            self.plot_secondary.setLabel('bottom', 'Time (s)')
-        
+            self.secondary_view.addItem(self.line_secondary)
+            self.plot.getAxis('right').setLabel(secondary_metric.replace('_', ' ').title())
+        else:
+            self.line_secondary = None
+            self.plot.getAxis('right').setLabel('')
+
         # Set initial selection region to full range
         self.selection_region.setRegion((time_array[0], time_array[-1]))
-        
+
         # Auto-scale
-        self.plot_primary.autoRange()
-        self.plot_secondary.autoRange()
-    
+        self.plot.autoRange()
+        self.secondary_view.autoRange()
+
     def _on_selection_changed(self):
         """Handle selection region change"""
         if not self.current_activity or len(self.current_activity.data) == 0:
@@ -136,6 +145,6 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         """Reset plot to show all data"""
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
-        
-        self.plot_primary.autoRange()
-        self.plot_secondary.autoRange()
+
+        self.plot.autoRange()
+        self.secondary_view.autoRange()

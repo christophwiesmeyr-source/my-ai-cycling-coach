@@ -1,4 +1,4 @@
-"""Main UI window for FIT data visualization"""
+"""Main UI window for data visualization"""
 import datetime
 from typing import Optional
 
@@ -150,12 +150,8 @@ class MainWindow(QMainWindow):
         self.activity_map.clear()
         self.activity_metadatas = []
 
-        try:
-            one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
-            activities = self.strava_client.list_activities(one_year_ago)
-        except Exception as exc:
-            self.info_text.setText(f"Failed to load Strava activities:\n{exc}")
-            return
+        one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
+        activities = self.strava_client.list_activities(one_year_ago)
 
         self.activity_metadatas = activities
 
@@ -218,7 +214,6 @@ class MainWindow(QMainWindow):
     def _load_activity(self, activity_id: int):
         metadata = self.activity_map.get(activity_id)
         if not metadata:
-            self.info_text.setText('Activity metadata not found.')
             return
 
         self.current_activity = self.strava_client.download_activity(activity_id)

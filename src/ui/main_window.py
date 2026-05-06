@@ -1,16 +1,15 @@
 """Main UI window for FIT data visualization"""
 import datetime
-from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit
+    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit
 )
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 
-from src.data import FITParser, Activity
+from src.data import Activity, StravaClient
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
         
@@ -27,11 +26,12 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1400, 800)
 
         self.current_activity: Optional[Activity] = None
-        self.current_directory: Optional[Path] = None
-        self.activity_path_map = {}
-        self.activity_list = []
+        self.strava_client = StravaClient()
+        self.activity_metadatas: list[dict] = []
+        self.activity_map: dict[int, dict] = {}
 
         self._init_ui()
+        self._load_recent_activities()
 
     def _init_ui(self):
         """Initialize UI components"""
@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout()
 
-        self._create_file_controls(left_layout)
+        self._create_strava_controls(left_layout)
         self._create_activity_selection(left_layout)
         self._create_metric_controls(left_layout)
 
@@ -72,15 +72,15 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(right_panel, 1)
         central_widget.setLayout(main_layout)
 
-    def _create_file_controls(self, layout):
-        """Create file loading controls"""
-        label = QLabel("File Management")
+    def _create_strava_controls(self, layout):
+        """Create Strava synchronization controls"""
+        label = QLabel("Strava Sync")
         label.setStyleSheet(LABEL_STYLE_HEADER)
         layout.addWidget(label)
 
-        btn_open_dir = QPushButton("Open Folder")
-        btn_open_dir.clicked.connect(self._open_directory)
-        layout.addWidget(btn_open_dir)
+        btn_refresh = QPushButton("Refresh Activities")
+        btn_refresh.clicked.connect(self._load_recent_activities)
+        layout.addWidget(btn_refresh)
 
     def _create_activity_selection(self, layout):
         layout.addSpacing(15)
@@ -97,11 +97,6 @@ class MainWindow(QMainWindow):
         self.table_activities.cellClicked.connect(self._on_activity_table_selected)
         self.table_activities.setSortingEnabled(False)  # enable after filling
         layout.addWidget(self.table_activities)
-
-        self.info_text = QTextEdit()
-        self.info_text.setReadOnly(True)
-        self.info_text.setMaximumHeight(150)
-        layout.addWidget(self.info_text)
 
     def _create_metric_controls(self, layout):
         layout.addSpacing(15)
@@ -149,46 +144,43 @@ class MainWindow(QMainWindow):
         stats_widget.setLayout(stats_layout)
         layout.addWidget(stats_widget)
 
-    def _open_directory(self):
-        directory = QFileDialog.getExistingDirectory(self, "Select Folder with FIT Files")
-        if not directory:
-            return
-
-        self.current_directory = Path(directory)
-        fit_files = FITParser.find_fit_files(directory)
-
+    def _load_recent_activities(self):
         self.table_activities.setSortingEnabled(False)
         self.table_activities.setRowCount(0)
-        self.activity_path_map.clear()
-        self.activity_list = []
+        self.activity_map.clear()
+        self.activity_metadatas = []
 
-        if not fit_files:
-            self.info_text.setText("No .fit files found in directory")
+        try:
+            one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
+            activities = self.strava_client.list_activities(one_year_ago)
+        except Exception as exc:
+            self.info_text.setText(f"Failed to load Strava activities:\n{exc}")
             return
 
-        for p in sorted(fit_files):
-            activity = FITParser.parse(p)
+        self.activity_metadatas = activities
+
+        for activity in activities:
             row = self.table_activities.rowCount()
             self.table_activities.insertRow(row)
 
-            if len(activity.data) > 0 and 'timestamp' in activity.data.columns:
-                date_value = activity.data.timestamp.iloc[0]
-                date_text = date_value.strftime("%Y-%m-%d")
-            else:
-                date_text = Path(p).stem
+            start_date = activity.get('start_date_local') or activity.get('start_date') or ''
+            try:
+                date_value = datetime.datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                date_text = date_value.strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                date_text = start_date or 'Unknown'
 
-            distance_text = f"{activity.total_distance/1000:.0f} km" if activity.total_distance else "N/A"
-            duration = datetime.timedelta(seconds=activity.duration_seconds)
-            time_text = str(duration) if activity.duration_seconds else "N/A"
+            distance_text = f"{activity.get('distance', 0) / 1000:.1f} km" if activity.get('distance') else 'N/A'
+            duration_text = str(datetime.timedelta(seconds=activity.get('elapsed_time', 0))) if activity.get('elapsed_time') else 'N/A'
 
             date_item = QTableWidgetItem(date_text)
-            date_item.setData(Qt.ItemDataRole.UserRole, p)
+            activity_id = int(activity.get('id'))
+            date_item.setData(Qt.ItemDataRole.UserRole, activity_id)
             self.table_activities.setItem(row, 0, date_item)
             self.table_activities.setItem(row, 1, QTableWidgetItem(distance_text))
-            self.table_activities.setItem(row, 2, QTableWidgetItem(time_text))
+            self.table_activities.setItem(row, 2, QTableWidgetItem(duration_text))
 
-            self.activity_list.append(p)
-            self.activity_path_map[date_text] = p
+            self.activity_map[activity_id] = activity
 
         self.table_activities.setSortingEnabled(True)
         self.table_activities.sortItems(0, Qt.SortOrder.DescendingOrder)
@@ -197,13 +189,17 @@ class MainWindow(QMainWindow):
             self.table_activities.selectRow(0)
             self._on_activity_table_selected(0, 0)
 
-    def _on_activity_selected(self, file_name):
+    def _on_activity_selected(self, activity_id):
         # Deprecated when using table-based selection. Keep for API compatibility.
-        if not file_name or file_name not in self.activity_path_map:
+        if not activity_id:
             return
 
-        file_path = self.activity_path_map[file_name]
-        self._load_fit_file(file_path)
+        try:
+            activity_id = int(activity_id)
+        except (TypeError, ValueError):
+            return
+
+        self._load_activity(activity_id)
 
     def _on_activity_table_selected(self, row, column):
         if row < 0 or row >= self.table_activities.rowCount():
@@ -213,33 +209,23 @@ class MainWindow(QMainWindow):
         if not date_item:
             return
 
-        # Use stored file path to keep mapping consistent after sorting
-        file_path = date_item.data(Qt.ItemDataRole.UserRole)
-        if not file_path:
+        activity_id = date_item.data(Qt.ItemDataRole.UserRole)
+        if activity_id is None:
             return
 
-        self._load_fit_file(file_path)
+        self._load_activity(activity_id)
 
-    def _load_fit_file(self, file_path):
-        self.current_activity = FITParser.parse(file_path)
-        self._update_activity_info()
+    def _load_activity(self, activity_id: int):
+        metadata = self.activity_map.get(activity_id)
+        if not metadata:
+            self.info_text.setText('Activity metadata not found.')
+            return
+
+        self.current_activity = self.strava_client.download_activity(activity_id)
+
         self._update_metric_dropdowns()
         self._plot_data()
         self._update_activity_stats()
-
-    def _update_activity_info(self):
-        if not self.current_activity:
-            return
-
-        info = (
-            f"Sport: {self.current_activity.sport}\n"
-            f"Duration: {self.current_activity.duration_seconds:.1f}s "
-            f"({self.current_activity.duration_seconds/60:.1f}m)\n"
-            f"Records: {len(self.current_activity.data)}\n"
-            f"Distance: {self.current_activity.total_distance or 'N/A'} m\n"
-            f"Start: {self.current_activity.start_time or 'N/A'}"
-        )
-        self.info_text.setText(info)
 
     def _update_activity_stats(self):
         statistics_string = self._format_stats_output(0, -1)

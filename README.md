@@ -4,7 +4,7 @@ A desktop application for analyzing cycling performance data from Garmin activit
 
 ## Features
 
-- **Load FIT Files**: Import activity files from your Garmin device or folder
+- **Sync from Strava**: Load the past year of activities directly from Strava metadata
 - **Interactive Plotting**: Visualize power output and heart rate with synchronized charts
 - **Time Selection**: Click-drag to select time ranges and analyze specific intervals
 - **Performance Analytics**: Calculate statistics (mean, max, min, std dev) for selected intervals
@@ -63,8 +63,20 @@ python main.py
 
 ### Loading Activities
 
-1. **From Folder**: Click "Open Folder" to load all .fit files from a directory
-2. **Single File**: Click "Open FIT File" to load a specific activity
+On startup, activities from the last year are loaded from Strava using metadata only.
+
+1. Use the "Refresh Activities" button to re-sync the latest activity list from Strava
+2. Select an activity in the table to download its data and display it
+
+### Authentication
+
+Provide your access token using the `STRAVA_ACCESS_TOKEN` environment variable, or store it in `~/.aitrainer/strava_tokens.json` with:
+
+```json
+{
+  "access_token": "YOUR_TOKEN"
+}
+```
 
 ### Analyzing Data
 

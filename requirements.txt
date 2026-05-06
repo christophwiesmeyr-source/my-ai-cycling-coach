@@ -4,3 +4,4 @@ pyqtgraph
 PyQt6
 numpy
 pandas
+requests

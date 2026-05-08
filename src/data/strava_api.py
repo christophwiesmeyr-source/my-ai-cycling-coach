@@ -1,7 +1,6 @@
 """Strava API client for listing activities and downloading activity streams."""
 import json
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,24 +22,68 @@ class StravaClient:
     STREAM_KEYS = 'time,altitude,heartrate,cadence,watts,velocity_smooth,distance'
 
     def __init__(self, access_token: Optional[str] = None):
-        self.access_token = access_token or self._load_access_token()
+        self.tokens = self._load_tokens()
+        if access_token:
+            self.tokens['access_token'] = access_token
+        self.access_token = self.tokens['access_token']
         self.headers = {'Authorization': f'Bearer {self.access_token}'}
+        self._check_and_refresh_token()
 
-    def _load_access_token(self) -> str:
-        token = os.getenv('STRAVA_ACCESS_TOKEN')
-        if token:
-            return token.strip()
-
+    def _load_tokens(self) -> Dict[str, Any]:
         if self.TOKEN_FILE.exists():
             with open(self.TOKEN_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            token = data.get('access_token') or data.get('accessToken')
-            if token:
-                return token.strip()
+            return data
 
         raise StravaClientError(
-            'Unable to find Strava access token. Set STRAVA_ACCESS_TOKEN or create ~/.aitrainer/strava_tokens.json with {"access_token": "..."}.'
+            'Unable to find Strava access token. Create ~/.aitrainer/strava_tokens.json with {"access_token": "...", "refresh_token": "..."}. '
         )
+
+    def _check_and_refresh_token(self):
+        try:
+            response = requests.get(
+                f'{self.BASE_URL}/athlete',
+                headers=self.headers,
+                timeout=10,
+            )
+            if response.status_code == 401:
+                self._refresh_token()
+        except requests.RequestException:
+            # If there's a network error, we can't refresh, so proceed anyway
+            pass
+
+    def _refresh_token(self):
+        client_id = self.tokens.get('strava_client_id')
+        client_secret = self.tokens.get('strava_client_secret')
+        if not client_id or not client_secret:
+            raise StravaClientError('Client ID and Client Secret required for token refresh. Include strava_client_id and strava_client_secret in strava_tokens.json.')
+        refresh_token = self.tokens.get('refresh_token')
+        if not refresh_token:
+            raise StravaClientError('Refresh token not found in strava_tokens.json.')
+
+        response = requests.post(
+            'https://www.strava.com/api/v3/oauth/token',
+            data={
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token,
+            },
+            timeout=30,
+        )
+        if response.status_code == 200:
+            new_tokens = response.json()
+            self.tokens.update(new_tokens)
+            self._save_tokens()
+            self.access_token = self.tokens['access_token']
+            self.headers = {'Authorization': f'Bearer {self.access_token}'}
+        else:
+            raise StravaClientError(f'Failed to refresh token: {response.status_code} {response.text}')
+
+    def _save_tokens(self):
+        self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.TOKEN_FILE, 'w', encoding='utf-8') as f:
+            json.dump(self.tokens, f, indent=2)
 
     def list_activities(self, after: datetime) -> List[Dict[str, Any]]:
         """List activities on Strava after a given date."""
@@ -78,6 +121,7 @@ class StravaClient:
 
     def download_activity(self, activity_id: int) -> Activity:
         """Download a single activity and convert it to an Activity object."""
+        self._check_and_refresh_token()
         metadata = self._get_activity_detail(activity_id)
         streams = self._get_activity_streams(activity_id)
         return self._build_activity(metadata, streams)

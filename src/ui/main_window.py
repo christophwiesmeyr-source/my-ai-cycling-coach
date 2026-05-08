@@ -4,7 +4,7 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit
+    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget
 )
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("FIT Data Visualizer - Cycling Analysis")
+        self.setWindowTitle("FIT Data Visualizer")
         self.setGeometry(100, 100, 1400, 800)
 
         self.current_activity: Optional[Activity] = None
@@ -35,9 +35,11 @@ class MainWindow(QMainWindow):
 
     def _init_ui(self):
         """Initialize UI components"""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        tab_widget = QTabWidget()
+        self.setCentralWidget(tab_widget)
 
+        # Analysis tab
+        analysis_widget = QWidget()
         main_layout = QHBoxLayout()
 
         left_panel = QWidget()
@@ -70,7 +72,19 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(left_panel)
         main_layout.addWidget(right_panel, 1)
-        central_widget.setLayout(main_layout)
+        analysis_widget.setLayout(main_layout)
+
+        # Training tab
+        training_widget = QWidget()
+        training_layout = QVBoxLayout()
+        training_label = QLabel("Training Plan Generation and Feedback")
+        training_label.setStyleSheet(LABEL_STYLE_HEADER)
+        training_layout.addWidget(training_label)
+        training_layout.addStretch()
+        training_widget.setLayout(training_layout)
+
+        tab_widget.addTab(analysis_widget, "Analysis")
+        tab_widget.addTab(training_widget, "Training")
 
     def _create_strava_controls(self, layout):
         """Create Strava synchronization controls"""

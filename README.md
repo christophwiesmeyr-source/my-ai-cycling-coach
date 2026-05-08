@@ -70,11 +70,12 @@ On startup, activities from the last year are loaded from Strava using metadata 
 
 ### Authentication
 
-Provide your access token using the `STRAVA_ACCESS_TOKEN` environment variable, or store it in `~/.aitrainer/strava_tokens.json` with:
+Store your access token in `~/.aitrainer/strava_tokens.json` with:
 
 ```json
 {
-  "access_token": "YOUR_TOKEN"
+  "access_token": "YOUR_TOKEN",
+  "refresh_token": "YOUR_REFRESH_TOKEN"
 }
 ```
 

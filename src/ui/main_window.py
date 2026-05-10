@@ -4,7 +4,8 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget
+    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget,
+    QCheckBox
 )
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
@@ -123,10 +124,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Primary:"))
         layout.addWidget(self.combo_primary)
 
+        self.checkbox_primary_filter = QCheckBox("Filter (20s)")
+        self.checkbox_primary_filter.stateChanged.connect(self._on_metric_changed)
+        layout.addWidget(self.checkbox_primary_filter)
+
         self.combo_secondary = QComboBox()
         self.combo_secondary.currentTextChanged.connect(self._on_metric_changed)
         layout.addWidget(QLabel("Secondary:"))
         layout.addWidget(self.combo_secondary)
+
+        self.checkbox_secondary_filter = QCheckBox("Filter (20s)")
+        self.checkbox_secondary_filter.stateChanged.connect(self._on_metric_changed)
+        layout.addWidget(self.checkbox_secondary_filter)
 
         btn_reset = QPushButton("Reset View")
         btn_reset.clicked.connect(self._reset_plot_view)
@@ -275,7 +284,17 @@ class MainWindow(QMainWindow):
         if secondary_metric == "None":
             secondary_metric = None
 
-        self.plot_widget.plot_activity(self.current_activity, primary_metric, secondary_metric)
+        # Apply filtering if checkboxes are checked
+        primary_filtered = self.checkbox_primary_filter.isChecked()
+        secondary_filtered = self.checkbox_secondary_filter.isChecked()
+
+        self.plot_widget.plot_activity(
+            self.current_activity, 
+            primary_metric, 
+            secondary_metric,
+            primary_filtered=primary_filtered,
+            secondary_filtered=secondary_filtered
+        )
 
         try:
             self.plot_widget.selection_changed.disconnect(self._on_selection_changed)

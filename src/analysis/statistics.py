@@ -4,14 +4,17 @@ from typing import Optional
 import numpy as np
 from dataclasses import dataclass
 
+# Constants for rolling max windows (in seconds)
+ROLLING_WINDOWS = [10, 60, 600, 1200]
+
 
 def rolling_max(data: np.ndarray, window: int) -> float:
     """Compute the maximum of rolling averages over a window."""
     if len(data) == 0 or window <= 0:
         return 0.0
     data_clean = data[~np.isnan(data)]
-    if window > len(data_clean):
-        return np.nan
+    if len(data_clean) < window:
+        return float(np.max(data_clean)) if len(data_clean) > 0 else 0.0
     cumsum = np.concatenate(([0.0], np.cumsum(data_clean)))
     win_sum = cumsum[window:] - cumsum[:-window]
     rolling_avgs = win_sum / window
@@ -71,7 +74,7 @@ class StatisticsCalculator:
                 out["Power Max"] = [float(np.nanmax(part)), "W"]
                 out["Power Avg"] = [float(np.nanmean(part)), "W"]
                 # Rolling max averages from slice
-                for secs in (10, 60, 600, 1200):
+                for secs in ROLLING_WINDOWS:
                     window_samples = max(1, int(secs / dt))
                     if secs == 60:
                         out[f"Power 1min Max"] = [rolling_max(part, window_samples), "W"]

@@ -5,12 +5,12 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget,
-    QCheckBox
+    QCheckBox, QMessageBox
 )
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 
-from src.data import Activity, StravaClient
+from src.data import Activity, StravaClient, StravaClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
         
@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         self.strava_client = StravaClient()
         self.activity_metadatas: list[dict] = []
         self.activity_map: dict[int, dict] = {}
+        self.activity_cache: dict[int, Activity] = {}
 
         self._init_ui()
         self._load_recent_activities()
@@ -239,7 +240,15 @@ class MainWindow(QMainWindow):
         if not metadata:
             return
 
-        self.current_activity = self.strava_client.download_activity(activity_id)
+        if activity_id in self.activity_cache:
+            self.current_activity = self.activity_cache[activity_id]
+        else:
+            try:
+                self.current_activity = self.strava_client.download_activity(activity_id)
+                self.activity_cache[activity_id] = self.current_activity
+            except StravaClientError as e:
+                QMessageBox.critical(self, "Download Error", f"Failed to download activity: {str(e)}")
+                return
 
         self._update_metric_dropdowns()
         self._plot_data()

@@ -127,11 +127,14 @@ class StravaClient:
         return self._build_activity(metadata, streams)
 
     def _get_activity_detail(self, activity_id: int) -> Dict[str, Any]:
-        response = requests.get(
-            f'{self.BASE_URL}/activities/{activity_id}',
-            headers=self.headers,
-            timeout=30,
-        )
+        try:
+            response = requests.get(
+                f'{self.BASE_URL}/activities/{activity_id}',
+                headers=self.headers,
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            raise StravaClientError(f'Failed to fetch activity detail: {e}') from e
         if response.status_code != 200:
             raise StravaClientError(
                 f'Failed to fetch activity detail: {response.status_code} {response.text}'
@@ -139,12 +142,15 @@ class StravaClient:
         return response.json()
 
     def _get_activity_streams(self, activity_id: int) -> Dict[str, List[Any]]:
-        response = requests.get(
-            f'{self.BASE_URL}/activities/{activity_id}/streams',
-            headers=self.headers,
-            params={'keys': self.STREAM_KEYS, 'key_by_type': 'true'},
-            timeout=30,
-        )
+        try:
+            response = requests.get(
+                f'{self.BASE_URL}/activities/{activity_id}/streams',
+                headers=self.headers,
+                params={'keys': self.STREAM_KEYS, 'key_by_type': 'true'},
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            raise StravaClientError(f'Failed to fetch activity streams: {e}') from e
         if response.status_code != 200:
             raise StravaClientError(
                 f'Failed to fetch activity streams: {response.status_code} {response.text}'

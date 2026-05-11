@@ -5,3 +5,5 @@ PyQt6
 numpy
 pandas
 requests
+pytest
+pytest-mock

@@ -13,6 +13,7 @@ import pyqtgraph as pg
 from src.data import Activity, StravaClient, StravaClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
+from .training_tab import TrainingTab
         
 
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
@@ -76,14 +77,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(right_panel, 1)
         analysis_widget.setLayout(main_layout)
 
-        # Training tab
-        training_widget = QWidget()
-        training_layout = QVBoxLayout()
-        training_label = QLabel("Training Plan Generation and Feedback")
-        training_label.setStyleSheet(LABEL_STYLE_HEADER)
-        training_layout.addWidget(training_label)
-        training_layout.addStretch()
-        training_widget.setLayout(training_layout)
+        training_widget = TrainingTab(self.strava_client)
 
         tab_widget.addTab(analysis_widget, "Analysis")
         tab_widget.addTab(training_widget, "Training")

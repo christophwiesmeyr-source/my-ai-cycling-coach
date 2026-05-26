@@ -1,6 +1,6 @@
 # FIT Data Visualizer
 
-A desktop application for analyzing cycling performance data from Garmin activities.
+A desktop application for analyzing cycling performance data from Garmin activities, with an AI-powered training coach.
 
 ## Features
 
@@ -9,46 +9,38 @@ A desktop application for analyzing cycling performance data from Garmin activit
 - **Time Selection**: Click-drag to select time ranges and analyze specific intervals
 - **Performance Analytics**: Calculate statistics (mean, max, min, std dev) for selected intervals
 - **Multi-Metric Analysis**: Compare multiple performance metrics simultaneously
-
-## Tech Stack
-
-- **Python 3.9+**
-- **PyQt6**: Desktop application framework
-# FIT Data Visualizer
-
-A desktop application for analyzing cycling performance data from Garmin activities.
-
-## Features
-
-- **Sync from Strava**: Load the past year of activities directly from Strava metadata
-- **Interactive Plotting**: Visualize power output and heart rate with synchronized charts
-- **Time Selection**: Click-drag to select time ranges and analyze specific intervals
-- **Performance Analytics**: Calculate statistics (mean, max, min, std dev) for selected intervals
-- **Multi-Metric Analysis**: Compare multiple performance metrics simultaneously
+- **AI Training Coach**: Generate personalized training plans, adapt them based on completed workouts, and chat with an AI coach about your progress
 
 ## Tech Stack
 
 - **Python 3.9+**
 - **PyQt6**: Desktop application framework
 - **PyQtGraph**: High-performance data visualization
-- **fitparse**: FIT file parsing
 - **pandas/NumPy**: Data processing
+- **Anthropic Claude**: AI training coach (claude-sonnet-4-6)
 
 ## Project Structure
 
 ```
 src/
-├── data/              # Data layer
-│   ├── activity.py    # Activity data model
-│   └── fit_parser.py  # FIT file parser
-├── analysis/          # Analysis layer
-│   └── statistics.py  # Statistics calculator
-└── ui/                # UI layer
-    ├── main_window.py # Main application window
-    └── plot_widget.py # Interactive plot widget
+├── data/                  # Data layer
+│   ├── activity.py        # Activity data model
+│   └── strava_api.py      # Strava API client
+├── analysis/              # Analysis layer
+│   └── statistics.py      # Statistics calculator
+├── ai/                    # AI layer
+│   ├── client.py          # Anthropic API client wrapper
+│   ├── tools.py           # Tool definitions for the adaptor agent
+│   ├── plan_generator.py  # Training plan generation
+│   ├── plan_adaptor.py    # Plan adaptation agent (tool use)
+│   └── chat_session.py    # Coaching chat session
+└── ui/                    # UI layer
+    ├── main_window.py     # Main application window
+    ├── training_tab.py    # AI training tab
+    ├── workers.py         # Background QThread workers
+    └── plot_widget.py     # Interactive plot widget
 
-data/                  # Directory for FIT files to analyze
-main.py                # Application entry point
+main.py                    # Application entry point
 ```
 
 ## Installation
@@ -69,7 +61,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Authentication and Strava tokens
+## Authentication
+
+### Strava
 
 This application uses the Strava API and requires an access token and refresh token, plus your Strava API client credentials to support automatic token refreshes. Store these values in the file `~/.aitrainer/strava_tokens.json` with the following fields:
 
@@ -90,7 +84,9 @@ Where to get these values:
 
   1. Open in your browser (replace `YOUR_CLIENT_ID` and `REDIRECT_URI`):
 
+     ```
      https://www.strava.com/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=code&redirect_uri=REDIRECT_URI&scope=activity:read_all&approval_prompt=auto
+     ```
 
   2. After authorizing, Strava will redirect to `REDIRECT_URI` with a `code` parameter. Exchange that code for tokens:
 
@@ -106,22 +102,45 @@ Where to get these values:
 
 Notes:
 
-- The `StravaClient` in this project uses the `strava_client_id` and `strava_client_secret` values to refresh expired access tokens. If those fields are missing the client cannot refresh tokens automatically.
+- The `StravaClient` uses the `strava_client_id` and `strava_client_secret` values to refresh expired access tokens automatically. If those fields are missing, token refresh will fail.
 - Keep `~/.aitrainer/strava_tokens.json` private — it contains sensitive credentials.
 
-Redirect URI and the script helper
+#### Redirect URI and the helper script
 
-- The `redirect_uri` is a URL you register in your Strava app settings. During OAuth the browser is redirected to that URL with a temporary `code` parameter. For local development, register a redirect URI like `http://localhost:5000/callback` in your Strava app configuration and use the same value when running the helper script.
+The `redirect_uri` is a URL you register in your Strava app settings. For local development, register `http://localhost:5000/callback` and use the same value when running the helper script.
 
-- To automate obtaining tokens, run the included helper script `src/data/get_strava_tokens.py`. It will open your browser, capture the redirect locally, exchange the code for tokens, and save them to `~/.aitrainer/strava_tokens.json` (including your client id/secret).
-
-Example:
+To automate obtaining tokens, run the included helper script:
 
 ```bash
 python src/data/get_strava_tokens.py --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --port 5000
 ```
 
-If you choose a different port or path, make sure the redirect URI you register on https://developers.strava.com matches `http://localhost:<port><path>` exactly.
+It will open your browser, capture the redirect locally, exchange the code for tokens, and save them to `~/.aitrainer/strava_tokens.json`.
+
+### Claude API (AI Training Features)
+
+The Training tab uses the Claude API from Anthropic for AI-powered plan generation, adaptation, and coaching chat. This requires a **separate API account** — a Claude.ai subscription does not grant API access.
+
+#### Setting up your Claude API key
+
+1. Sign up at [console.anthropic.com](https://console.anthropic.com)
+2. Add a payment method. Usage is billed per token — generating or adapting a training plan typically costs a few cents per run; chat is similarly inexpensive.
+3. Navigate to **API Keys** and create a new key.
+4. Save the key to `~/.aitrainer/claude_api_key`:
+
+```bash
+mkdir -p ~/.aitrainer
+echo "sk-ant-your-key-here" > ~/.aitrainer/claude_api_key
+chmod 600 ~/.aitrainer/claude_api_key
+```
+
+Alternatively, set the `ANTHROPIC_API_KEY` environment variable — the application checks this first if the file is absent:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+```
+
+> **Keep your API key private.** Anyone with your key can make API calls billed to your account.
 
 ## Usage
 
@@ -135,33 +154,35 @@ python main.py
 
 On startup, activities from the last year are loaded from Strava using metadata only.
 
-1. Use the "Refresh Activities" button to re-sync the latest activity list from Strava
-2. Select an activity in the table to download its data and display it
+1. Use the **Refresh Activities** button to re-sync the latest activity list from Strava.
+2. Select an activity in the table to download its full data and display it.
 
 ### Analyzing Data
 
-1. Select primary and secondary metrics from the dropdowns
-2. Click and drag on the plots to select a time range
-3. View statistics for the selected interval in the "Selection Statistics" panel
-4. Use middle mouse button to pan, scroll wheel to zoom
+1. Select primary and secondary metrics from the dropdowns.
+2. Click and drag on the plot to select a time range.
+3. View statistics for the selected interval in the **Selection Statistics** panel.
+4. Use middle mouse button to pan, scroll wheel to zoom.
 
-## Features Roadmap
-- [ ] Multi-activity comparison
-- [ ] Custom interval definitions (training zones)
-- [ ] Export statistics and reports
-- [ ] Direct Garmin API integration
-- [ ] Web-based version
-- [ ] Data smoothing and filtering options
-- [ ] Advanced interval detection
+### AI Training Coach
+
+Navigate to the **Training** tab to use the AI features:
+
+1. **Generate Plan**: Fill in your training goals (target event, weekly hours, current FTP, etc.) and click **Generate Plan**. The plan is saved to `~/.aitrainer/plan_original.md` and displayed in the viewer.
+2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent Strava activities, compares them against the plan, and writes an updated version to `~/.aitrainer/plan_adapted.md`.
+3. **Chat**: Use the chat panel at the bottom to ask your AI coach questions about your progress, request session advice, or discuss adjustments to the plan.
 
 ## Architecture Notes
 
-The codebase is organized into three layers:
-- **Data Layer**: Handles FIT file parsing and activity data models
-- **Analysis Layer**: Provides statistical calculations (metric-agnostic)
-- **UI Layer**: PyQt6-based desktop interface
+The codebase is organized into four layers:
 
-This modular structure enables easy porting to web technologies in the future.
+- **Data Layer**: Strava API integration and activity data models
+- **Analysis Layer**: Statistical calculations (metric-agnostic)
+- **AI Layer**: Anthropic Claude integration for plan generation, agentic adaptation (tool use), and streaming chat
+- **UI Layer**: PyQt6-based desktop interface; background AI calls run in QThread workers to keep the UI responsive
+
+## Features Roadmap
+- [x] AI trainer functionality
 
 ## Contributing
 

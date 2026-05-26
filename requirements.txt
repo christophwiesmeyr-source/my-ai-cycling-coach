@@ -5,5 +5,7 @@ PyQt6
 numpy
 pandas
 requests
+anthropic
+markdown
 pytest
 pytest-mock

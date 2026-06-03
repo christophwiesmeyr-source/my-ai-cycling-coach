@@ -1,6 +1,5 @@
 """Training tab — AI plan generation, adaptation, and coaching chat"""
 import json
-from pathlib import Path
 
 import markdown as md
 
@@ -13,9 +12,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
+from src.constants import GOALS_PATH
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
-
-GOALS_PATH = Path.home() / ".aitrainer" / "goals.json"
 
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
 LABEL_STYLE_SUBHEADER = "font-weight: bold;"

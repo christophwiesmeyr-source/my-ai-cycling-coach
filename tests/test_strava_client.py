@@ -11,8 +11,15 @@ class TestStravaClient:
     
     @pytest.fixture
     def mock_client(self):
-        client = StravaClient()
-        # Mock the token refresh to avoid real API calls
+        fake_tokens = {
+            'access_token': 'test_token',
+            'refresh_token': 'test_refresh',
+            'strava_client_id': '12345',
+            'strava_client_secret': 'test_secret',
+        }
+        with patch.object(StravaClient, '_load_tokens', return_value=fake_tokens), \
+             patch.object(StravaClient, '_check_and_refresh_token'):
+            client = StravaClient()
         client._check_and_refresh_token = Mock()
         return client
     

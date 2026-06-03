@@ -1,8 +1,8 @@
 @echo off
-REM Quick start script for FIT Data Visualizer (Windows)
+REM Quick start script for My AI Cycling Coach (Windows)
 
 echo.
-echo 🚀 FIT Data Visualizer - Setup
+echo 🚀 My AI Cycling Coach - Setup
 echo ================================
 
 REM Check Python version

@@ -1,13 +1,13 @@
 """Strava API client for listing activities and downloading activity streams."""
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
 
 from .activity import Activity
+from src.constants import STRAVA_TOKENS_PATH
 
 
 class StravaClientError(Exception):
@@ -17,7 +17,7 @@ class StravaClientError(Exception):
 class StravaClient:
     """Client for requesting Strava activity metadata and streams."""
 
-    TOKEN_FILE = Path.home() / '.aitrainer' / 'strava_tokens.json'
+    TOKEN_FILE = STRAVA_TOKENS_PATH
     BASE_URL = 'https://www.strava.com/api/v3'
     STREAM_KEYS = 'time,altitude,heartrate,cadence,watts,velocity_smooth,distance'
 
@@ -36,7 +36,7 @@ class StravaClient:
             return data
 
         raise StravaClientError(
-            'Unable to find Strava access token. Create ~/.aitrainer/strava_tokens.json with {"access_token": "...", "refresh_token": "..."}. '
+            f'Unable to find Strava access token. Create {STRAVA_TOKENS_PATH} with {{"access_token": "...", "refresh_token": "..."}}.'
         )
 
     def _check_and_refresh_token(self):

@@ -4,7 +4,7 @@
 This script starts a local HTTP server, opens the Strava authorization URL
 in your browser, receives the redirect with the authorization code, exchanges
 the code for access and refresh tokens, and saves them to
-`~/.aitrainer/strava_tokens.json` along with your client id/secret.
+`~/.my-ai-cycling-coach/strava_tokens.json` along with your client id/secret.
 
 Usage:
   python src/data/get_strava_tokens.py --client-id 12345 --client-secret abcd
@@ -95,7 +95,8 @@ def exchange_code_for_tokens(client_id: str, client_secret: str, code: str, redi
 
 
 def save_tokens(tokens: dict, client_id: str, client_secret: str) -> Path:
-    token_file = Path.home() / ".aitrainer" / "strava_tokens.json"
+    from src.constants import STRAVA_TOKENS_PATH
+    token_file = STRAVA_TOKENS_PATH
     token_file.parent.mkdir(parents=True, exist_ok=True)
     # include client id/secret for automatic refresh
     tokens_to_save = dict(tokens)

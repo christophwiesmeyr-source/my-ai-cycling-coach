@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Main entry point for FIT Data Visualizer"""
+"""Main entry point for My AI Cycling Coach"""
 import sys
 from PyQt6.QtWidgets import QApplication
 

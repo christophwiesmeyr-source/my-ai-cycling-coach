@@ -1,14 +1,11 @@
 """Plan adaptor agent — compares original plan to Strava activities and produces an adapted plan"""
 import datetime
-from pathlib import Path
 
 import numpy as np
 
-from .client import get_client, MODEL
+from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL, STRAVA_HISTORY_WEEKS
+from .client import get_client
 from .tools import TOOLS
-from .plan_generator import AITRAINER_DIR, PLAN_ORIGINAL_PATH
-
-PLAN_ADAPTED_PATH = AITRAINER_DIR / "plan_adapted.md"
 
 _SYSTEM = (
     "You are an expert cycling coach. You will analyse a training plan against the athlete's "
@@ -23,7 +20,7 @@ Here is the original training plan:
 {original_plan}
 
 Please:
-1. Use the tools to retrieve recent Strava activities (start with the last 12 weeks).
+1. Use the tools to retrieve recent Strava activities (start with the last {weeks} weeks).
 2. Compare completed workouts against the planned sessions — what was done, what was skipped, \
 and what the current fitness trajectory looks like.
 3. Identify 3-5 key observations about adherence and progress.
@@ -43,11 +40,12 @@ def adapt_plan(strava_client) -> str:
 
     original_plan = PLAN_ORIGINAL_PATH.read_text()
     client = get_client()
-    messages = [{"role": "user", "content": _USER_PROMPT.format(original_plan=original_plan)}]
+    prompt = _USER_PROMPT.format(original_plan=original_plan, weeks=STRAVA_HISTORY_WEEKS)
+    messages = [{"role": "user", "content": prompt}]
 
     while True:
         response = client.messages.create(
-            model=MODEL,
+            model=AI_MODEL,
             max_tokens=4096,
             system=_SYSTEM,
             tools=TOOLS,
@@ -56,7 +54,7 @@ def adapt_plan(strava_client) -> str:
 
         if response.stop_reason == "end_turn":
             adapted = _extract_text(response.content)
-            AITRAINER_DIR.mkdir(parents=True, exist_ok=True)
+            APP_DIR.mkdir(parents=True, exist_ok=True)
             PLAN_ADAPTED_PATH.write_text(adapted)
             return adapted
 
@@ -80,7 +78,7 @@ def _execute_tools(content: list, strava_client) -> list:
         if block.type != "tool_use":
             continue
         if block.name == "list_recent_activities":
-            weeks = block.input.get("weeks", 12)
+            weeks = block.input.get("weeks", STRAVA_HISTORY_WEEKS)
             output = _list_activities(strava_client, weeks)
         elif block.name == "get_activity_power_data":
             output = _get_power_data(strava_client, int(block.input["activity_id"]))

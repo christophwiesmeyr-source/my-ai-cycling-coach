@@ -1,1 +1,1 @@
-"""FIT Data Visualizer - Analyze cycling performance data from Garmin activities"""
+"""My AI Cycling Coach - Analyze cycling performance data and get AI-powered training plans"""

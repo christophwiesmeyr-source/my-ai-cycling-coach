@@ -1,19 +1,15 @@
 """Training plan generator — single-shot plan creation from user goals"""
-from pathlib import Path
-
-from .client import get_client, MODEL
-
-AITRAINER_DIR = Path.home() / ".aitrainer"
-PLAN_ORIGINAL_PATH = AITRAINER_DIR / "plan_original.md"
+from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, AI_MODEL
+from .client import get_client
 
 
 def generate_plan(goals: dict) -> str:
     """Generate a structured training plan from user goals and save to plan_original.md."""
-    AITRAINER_DIR.mkdir(parents=True, exist_ok=True)
+    APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
     message = client.messages.create(
-        model=MODEL,
+        model=AI_MODEL,
         max_tokens=4096,
         system=(
             "You are an expert cycling coach. Create detailed, structured training plans "

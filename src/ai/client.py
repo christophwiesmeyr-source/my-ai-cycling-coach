@@ -1,11 +1,9 @@
 """Anthropic API client — key loading and client factory"""
 import os
-from pathlib import Path
 
 import anthropic
 
-MODEL = "claude-sonnet-4-6"
-_KEY_FILE = Path.home() / ".aitrainer" / "claude_api_key"
+from src.constants import CLAUDE_API_KEY_PATH
 
 
 class AIClientError(Exception):
@@ -15,13 +13,13 @@ class AIClientError(Exception):
 def _load_api_key() -> str:
     if key := os.environ.get("ANTHROPIC_API_KEY"):
         return key
-    if _KEY_FILE.exists():
-        key = _KEY_FILE.read_text().strip()
+    if CLAUDE_API_KEY_PATH.exists():
+        key = CLAUDE_API_KEY_PATH.read_text().strip()
         if key:
             return key
     raise AIClientError(
         f"Claude API key not found. Set the ANTHROPIC_API_KEY environment variable "
-        f"or save your key to {_KEY_FILE}.\n"
+        f"or save your key to {CLAUDE_API_KEY_PATH}.\n"
         f"See the README for setup instructions."
     )
 

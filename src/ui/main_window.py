@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 
+from src.constants import APP_NAME
 from src.data import Activity, StravaClient, StravaClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
@@ -24,7 +25,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("FIT Data Visualizer")
+        self.setWindowTitle(APP_NAME)
         self.setGeometry(100, 100, 1400, 800)
 
         self.current_activity: Optional[Activity] = None

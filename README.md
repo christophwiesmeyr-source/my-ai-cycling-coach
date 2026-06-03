@@ -1,4 +1,4 @@
-# FIT Data Visualizer
+# My AI Cycling Coach
 
 A desktop application for analyzing cycling performance data from Garmin activities, with an AI-powered training coach.
 
@@ -47,7 +47,7 @@ main.py                    # Application entry point
 
 ### 1. Enter project directory
 ```bash
-cd fit-data-viewer
+cd my-ai-cycling-coach
 ```
 
 ### 2. Create a virtual environment
@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 ### Strava
 
-This application uses the Strava API and requires an access token and refresh token, plus your Strava API client credentials to support automatic token refreshes. Store these values in the file `~/.aitrainer/strava_tokens.json` with the following fields:
+This application uses the Strava API and requires an access token and refresh token, plus your Strava API client credentials to support automatic token refreshes. Store these values in the file `~/.my-ai-cycling-coach/strava_tokens.json` with the following fields:
 
 ```json
 {
@@ -98,12 +98,12 @@ Where to get these values:
        -F grant_type=authorization_code
      ```
 
-  3. The JSON response will include `access_token` and `refresh_token`. Paste these into `~/.aitrainer/strava_tokens.json` along with your client id/secret.
+  3. The JSON response will include `access_token` and `refresh_token`. Paste these into `~/.my-ai-cycling-coach/strava_tokens.json` along with your client id/secret.
 
 Notes:
 
 - The `StravaClient` uses the `strava_client_id` and `strava_client_secret` values to refresh expired access tokens automatically. If those fields are missing, token refresh will fail.
-- Keep `~/.aitrainer/strava_tokens.json` private — it contains sensitive credentials.
+- Keep `~/.my-ai-cycling-coach/strava_tokens.json` private — it contains sensitive credentials.
 
 #### Redirect URI and the helper script
 
@@ -115,7 +115,7 @@ To automate obtaining tokens, run the included helper script:
 python src/data/get_strava_tokens.py --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --port 5000
 ```
 
-It will open your browser, capture the redirect locally, exchange the code for tokens, and save them to `~/.aitrainer/strava_tokens.json`.
+It will open your browser, capture the redirect locally, exchange the code for tokens, and save them to `~/.my-ai-cycling-coach/strava_tokens.json`.
 
 ### Claude API (AI Training Features)
 
@@ -126,12 +126,12 @@ The Training tab uses the Claude API from Anthropic for AI-powered plan generati
 1. Sign up at [console.anthropic.com](https://console.anthropic.com)
 2. Add a payment method. Usage is billed per token — generating or adapting a training plan typically costs a few cents per run; chat is similarly inexpensive.
 3. Navigate to **API Keys** and create a new key.
-4. Save the key to `~/.aitrainer/claude_api_key`:
+4. Save the key to `~/.my-ai-cycling-coach/claude_api_key`:
 
 ```bash
-mkdir -p ~/.aitrainer
-echo "sk-ant-your-key-here" > ~/.aitrainer/claude_api_key
-chmod 600 ~/.aitrainer/claude_api_key
+mkdir -p ~/.my-ai-cycling-coach
+echo "sk-ant-your-key-here" > ~/.my-ai-cycling-coach/claude_api_key
+chmod 600 ~/.my-ai-cycling-coach/claude_api_key
 ```
 
 Alternatively, set the `ANTHROPIC_API_KEY` environment variable — the application checks this first if the file is absent:
@@ -168,8 +168,8 @@ On startup, activities from the last year are loaded from Strava using metadata 
 
 Navigate to the **Training** tab to use the AI features:
 
-1. **Generate Plan**: Fill in your training goals (target event, weekly hours, current FTP, etc.) and click **Generate Plan**. The plan is saved to `~/.aitrainer/plan_original.md` and displayed in the viewer.
-2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent Strava activities, compares them against the plan, and writes an updated version to `~/.aitrainer/plan_adapted.md`.
+1. **Generate Plan**: Fill in your training goals (target event, weekly hours, current FTP, etc.) and click **Generate Plan**. The plan is saved to `~/.my-ai-cycling-coach/plan_original.md` and displayed in the viewer.
+2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent Strava activities, compares them against the plan, and writes an updated version to `~/.my-ai-cycling-coach/plan_adapted.md`.
 3. **Chat**: Use the chat panel at the bottom to ask your AI coach questions about your progress, request session advice, or discuss adjustments to the plan.
 
 ## Architecture Notes

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick start script for FIT Data Visualizer
+# Quick start script for My AI Cycling Coach
 
-echo "🚀 FIT Data Visualizer - Setup"
+echo "🚀 My AI Cycling Coach - Setup"
 echo "================================"
 
 # Check Python version

@@ -1,10 +1,8 @@
 """Chat session — maintains conversation history and streams coaching responses"""
-from pathlib import Path
 from typing import Iterator
 
-from .client import get_client, MODEL
-from .plan_generator import PLAN_ORIGINAL_PATH
-from .plan_adaptor import PLAN_ADAPTED_PATH
+from src.constants import PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL
+from .client import get_client
 
 _SYSTEM_BASE = (
     "You are an expert cycling coach assistant. Help the athlete understand their training "
@@ -37,7 +35,7 @@ class ChatSession:
         """Stream the next assistant response given current history. Yields text chunks."""
         client = get_client()
         with client.messages.stream(
-            model=MODEL,
+            model=AI_MODEL,
             max_tokens=2048,
             system=self._build_system(),
             messages=self.history,

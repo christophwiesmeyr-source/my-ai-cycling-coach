@@ -291,12 +291,16 @@ class TrainingTab(QWidget):
         self._set_chat_input_enabled(False)
         self._append_chat_assistant_start()
 
-        worker = ChatWorker(self.chat_session)
+        worker = ChatWorker(self.chat_session, self.strava_client)
         worker.chunk_received.connect(self._on_chat_chunk)
+        worker.tool_status.connect(self._on_chat_tool_status)
         worker.finished.connect(self._on_chat_finished)
         worker.error_occurred.connect(self._on_chat_error)
         self._active_worker = worker
         worker.start()
+
+    def _on_chat_tool_status(self, message: str):
+        self.chat_display.append(f"<i>({message})</i>")
 
     def _on_chat_chunk(self, chunk: str):
         cursor = self.chat_display.textCursor()

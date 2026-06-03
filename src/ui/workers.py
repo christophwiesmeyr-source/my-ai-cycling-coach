@@ -1,9 +1,14 @@
 """Background QThread workers for AI operations — keeps the UI responsive"""
+from typing import Any
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from src.ai.client import get_client
 from src.ai.plan_generator import generate_plan, generate_sessions
 from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
+from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
+from src.constants import AI_MODEL
 
 
 class PlanGeneratorWorker(QThread):
@@ -47,22 +52,54 @@ class PlanAdaptorWorker(QThread):
 
 
 class ChatWorker(QThread):
-    """Streams a chat response chunk by chunk."""
+    """Streams a coaching chat response, executing Strava tool calls as needed."""
 
     chunk_received = pyqtSignal(str)
+    tool_status = pyqtSignal(str)
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, session: ChatSession):
+    def __init__(self, session: ChatSession, strava_client):
         super().__init__()
         self.session = session
+        self.strava_client = strava_client
 
     def run(self):
+        messages: list[Any] = list(self.session.history)
+        client = get_client()
         full_response = ""
+
         try:
-            for chunk in self.session.stream_response():
-                full_response += chunk
-                self.chunk_received.emit(chunk)
+            while True:
+                with client.messages.stream(
+                    model=AI_MODEL,
+                    max_tokens=2048,
+                    system=self.session.build_system(),
+                    tools=TOOLS,
+                    messages=messages,
+                ) as stream:
+                    for text in stream.text_stream:
+                        full_response += text
+                        self.chunk_received.emit(text)
+                    final = stream.get_final_message()
+
+                if final.stop_reason == "end_turn":
+                    break
+
+                if final.stop_reason == "tool_use":
+                    messages.append({"role": "assistant", "content": final.content})
+                    for block in final.content:
+                        if hasattr(block, "type") and block.type == "tool_use":
+                            status = TOOL_STATUS_MESSAGES.get(
+                                block.name, f"Using tool: {block.name}…"
+                            )
+                            self.tool_status.emit(status)
+                    results = execute_tools(final.content, self.strava_client)
+                    messages.append({"role": "user", "content": results})
+                    continue
+
+                break
+
             self.finished.emit(full_response)
         except Exception as exc:
             self.error_occurred.emit(str(exc))

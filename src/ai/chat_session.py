@@ -1,19 +1,18 @@
-"""Chat session — maintains conversation history and streams coaching responses"""
-from typing import Iterator
-
-from src.constants import PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL
-from .client import get_client
+"""Chat session — maintains conversation history and system context for the coaching chat"""
+from src.constants import PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
 
 _SYSTEM_BASE = (
     "You are an expert cycling coach assistant. Help the athlete understand their training "
     "progress, compare completed workouts against the plan, and provide actionable advice. "
-    "Be concise and practical. Reference specific sessions or metrics when relevant."
+    "Be concise and practical. Reference specific sessions or metrics when relevant. "
+    "Use the available tools to fetch Strava activity data whenever it would help you give "
+    "a more specific or accurate answer."
 )
 
 
 class ChatSession:
     def __init__(self):
-        self.history: list[dict] = []
+        self.history: list = []
         self.original_plan: str = ""
         self.adapted_plan: str = ""
         self.reload_plans()
@@ -31,19 +30,7 @@ class ChatSession:
     def add_assistant_message(self, text: str):
         self.history.append({"role": "assistant", "content": text})
 
-    def stream_response(self) -> Iterator[str]:
-        """Stream the next assistant response given current history. Yields text chunks."""
-        client = get_client()
-        with client.messages.stream(
-            model=AI_MODEL,
-            max_tokens=2048,
-            system=self._build_system(),
-            messages=self.history,
-        ) as stream:
-            for chunk in stream.text_stream:
-                yield chunk
-
-    def _build_system(self) -> str:
+    def build_system(self) -> str:
         parts = [_SYSTEM_BASE]
         if self.original_plan:
             parts.append(f"\n\n## Original Training Plan\n\n{self.original_plan}")

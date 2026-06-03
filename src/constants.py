@@ -9,6 +9,8 @@ STRAVA_TOKENS_PATH = APP_DIR / "strava_tokens.json"
 CLAUDE_API_KEY_PATH = APP_DIR / "claude_api_key"
 PLAN_ORIGINAL_PATH = APP_DIR / "plan_original.md"
 PLAN_ADAPTED_PATH = APP_DIR / "plan_adapted.md"
+SESSIONS_ORIGINAL_PATH = APP_DIR / "sessions_original.csv"
+SESSIONS_ADAPTED_PATH = APP_DIR / "sessions_adapted.csv"
 GOALS_PATH = APP_DIR / "goals.json"
 
 # AI settings

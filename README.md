@@ -1,6 +1,6 @@
 # My AI Cycling Coach
 
-A desktop application for analyzing cycling performance data from Garmin activities, with an AI-powered training coach.
+A desktop application for analyzing cycling performance data from Strava activities, with an AI-powered training coach.
 
 ## Features
 

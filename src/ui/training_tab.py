@@ -1,5 +1,8 @@
 """Training tab — AI plan generation, adaptation, and coaching chat"""
+import csv
 import json
+import re
+from datetime import date
 
 import markdown as md
 
@@ -7,13 +10,30 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QLabel, QLineEdit, QTextEdit,
     QSpinBox, QComboBox, QFormLayout, QTabWidget,
-    QMessageBox, QSizePolicy,
+    QMessageBox, QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QDate
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
-from src.constants import GOALS_PATH
+from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
+
+
+def _compute_watts(pct_str: str, ftp: int) -> str:
+    """Convert a %FTP range string to absolute watts given an FTP value."""
+    s = pct_str.strip()
+    m = re.match(r'<(\d+)%', s)
+    if m:
+        return f"<{round(int(m.group(1)) / 100 * ftp)} W"
+    m = re.match(r'>(\d+)%', s)
+    if m:
+        return f">{round(int(m.group(1)) / 100 * ftp)} W"
+    m = re.match(r'(\d+)[-–](\d+)%', s)
+    if m:
+        lo = round(int(m.group(1)) / 100 * ftp)
+        hi = round(int(m.group(2)) / 100 * ftp)
+        return f"{lo}–{hi} W"
+    return ""
 
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
 LABEL_STYLE_SUBHEADER = "font-weight: bold;"
@@ -27,6 +47,7 @@ class TrainingTab(QWidget):
         self._active_worker = None
         self._init_ui()
         self._load_existing_plans()
+        self._load_sessions_table()
         self._load_goals()
 
     # ------------------------------------------------------------------ #
@@ -62,9 +83,16 @@ class TrainingTab(QWidget):
         self.input_goal.setPlaceholderText("e.g. Complete a gran fondo, Improve FTP")
         form.addRow("Main goal:", self.input_goal)
 
-        self.input_event = QLineEdit()
-        self.input_event.setPlaceholderText("e.g. Gran Fondo, 14 Sep 2026 (optional)")
-        form.addRow("Target event:", self.input_event)
+        self.input_event_name = QLineEdit()
+        self.input_event_name.setPlaceholderText("e.g. Ötztaler Radmarathon (optional)")
+        form.addRow("Event name:", self.input_event_name)
+
+        self.input_event_date = QDateEdit()
+        self.input_event_date.setCalendarPopup(True)
+        self.input_event_date.setDisplayFormat("dd MMM yyyy")
+        self.input_event_date.setMinimumDate(QDate.currentDate().addDays(1))
+        self.input_event_date.setDate(QDate.currentDate().addMonths(4))
+        form.addRow("Event date:", self.input_event_date)
 
         self.spin_hours = QSpinBox()
         self.spin_hours.setRange(1, 30)
@@ -133,6 +161,15 @@ class TrainingTab(QWidget):
         )
         self.plan_tabs.addTab(self.adapted_plan_view, "Adapted")
 
+        self.sessions_table = QTableWidget()
+        self.sessions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.sessions_table.setSortingEnabled(True)
+        self.sessions_table.setAlternatingRowColors(True)
+        if (vh := self.sessions_table.verticalHeader()):
+            vh.setVisible(False)
+        self.sessions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.plan_tabs.addTab(self.sessions_table, "Sessions")
+
         layout.addWidget(self.plan_tabs)
         return widget
 
@@ -175,8 +212,9 @@ class TrainingTab(QWidget):
             return
 
         self._save_goals(goals)
-        self._set_busy(True, "Generating training plan…")
+        self._set_busy(True, "Starting…")
         worker = PlanGeneratorWorker(goals)
+        worker.status_update.connect(self.status_label.setText)
         worker.finished.connect(self._on_plan_generated)
         worker.error_occurred.connect(self._on_error)
         worker.finished.connect(lambda: self._set_busy(False, ""))
@@ -186,6 +224,7 @@ class TrainingTab(QWidget):
 
     def _on_plan_generated(self, plan: str):
         self.original_plan_view.setHtml(self._render_markdown(plan))
+        self._load_sessions_table()
         self.plan_tabs.setCurrentIndex(0)
         self.chat_session.reload_plans()
         self._append_chat_system("Training plan generated. You can now chat about it.")
@@ -262,14 +301,69 @@ class TrainingTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _collect_goals(self) -> dict:
+        today = date.today()
+        event_date = self.input_event_date.date().toPyDate()
+        days_until = (event_date - today).days
+        weeks_until = max(days_until // 7, 1)
         return {
             "main_goal": self.input_goal.text().strip(),
-            "target_event": self.input_event.text().strip(),
+            "event_name": self.input_event_name.text().strip(),
+            "event_date": event_date.isoformat(),
+            "current_date": today.isoformat(),
+            "days_until_event": days_until,
+            "weeks_until_event": weeks_until,
             "available_hours_per_week": self.spin_hours.value(),
             "current_ftp_watts": self.spin_ftp.value() or None,
             "experience_level": self.combo_level.currentText(),
             "additional_notes": self.input_notes.toPlainText().strip(),
         }
+
+    def _load_sessions_table(self):
+        if not SESSIONS_ORIGINAL_PATH.exists():
+            return
+
+        ftp = self.spin_ftp.value()
+        show_watts = ftp > 0
+
+        with open(SESSIONS_ORIGINAL_PATH, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        if not rows:
+            return
+
+        headers = ["Date", "Week", "Phase", "Type", "Duration", "Intensity", "Target %FTP"]
+        if show_watts:
+            headers.append("Target Watts")
+        headers.append("Description")
+
+        self.sessions_table.setSortingEnabled(False)
+        self.sessions_table.setRowCount(len(rows))
+        self.sessions_table.setColumnCount(len(headers))
+        self.sessions_table.setHorizontalHeaderLabels(headers)
+
+        for row_idx, row in enumerate(rows):
+            pct = row.get("target_power_pct_ftp", "")
+            values = [
+                row.get("date", ""),
+                row.get("week", ""),
+                row.get("phase", ""),
+                row.get("type", ""),
+                f"{row.get('duration_min', '')} min",
+                row.get("intensity", ""),
+                pct,
+            ]
+            if show_watts:
+                values.append(_compute_watts(pct, ftp))
+            values.append(row.get("description", ""))
+
+            for col_idx, val in enumerate(values):
+                self.sessions_table.setItem(row_idx, col_idx, QTableWidgetItem(str(val)))
+
+        self.sessions_table.setSortingEnabled(True)
+        self.sessions_table.resizeColumnsToContents()
+        header = self.sessions_table.horizontalHeader()
+        if header:
+            header.setStretchLastSection(True)
 
     def _load_existing_plans(self):
         if PLAN_ORIGINAL_PATH.exists():
@@ -306,7 +400,11 @@ class TrainingTab(QWidget):
         except (json.JSONDecodeError, OSError):
             return
         self.input_goal.setText(goals.get("main_goal") or "")
-        self.input_event.setText(goals.get("target_event") or "")
+        self.input_event_name.setText(goals.get("event_name") or "")
+        if goals.get("event_date"):
+            q_date = QDate.fromString(goals["event_date"], "yyyy-MM-dd")
+            if q_date.isValid() and q_date > QDate.currentDate():
+                self.input_event_date.setDate(q_date)
         if goals.get("available_hours_per_week"):
             self.spin_hours.setValue(int(goals["available_hours_per_week"]))
         if goals.get("current_ftp_watts"):

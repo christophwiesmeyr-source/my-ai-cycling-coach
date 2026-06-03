@@ -1,14 +1,15 @@
 """Background QThread workers for AI operations — keeps the UI responsive"""
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from src.ai.plan_generator import generate_plan
+from src.ai.plan_generator import generate_plan, generate_sessions
 from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
 
 
 class PlanGeneratorWorker(QThread):
-    """Generates a new training plan from user goals."""
+    """Generates a training plan then a structured session CSV."""
 
+    status_update = pyqtSignal(str)
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
@@ -18,7 +19,10 @@ class PlanGeneratorWorker(QThread):
 
     def run(self):
         try:
+            self.status_update.emit("Generating training plan…")
             plan = generate_plan(self.goals)
+            self.status_update.emit("Generating session list…")
+            generate_sessions(plan, self.goals)
             self.finished.emit(plan)
         except Exception as exc:
             self.error_occurred.emit(str(exc))

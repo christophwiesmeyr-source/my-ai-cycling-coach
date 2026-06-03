@@ -161,14 +161,32 @@ class TrainingTab(QWidget):
         )
         self.plan_tabs.addTab(self.adapted_plan_view, "Adapted")
 
+        sessions_widget = QWidget()
+        sessions_layout = QVBoxLayout(sessions_widget)
+        sessions_layout.setContentsMargins(0, 0, 0, 0)
+        sessions_splitter = QSplitter(Qt.Orientation.Vertical)
+
         self.sessions_table = QTableWidget()
         self.sessions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.sessions_table.setSortingEnabled(True)
         self.sessions_table.setAlternatingRowColors(True)
+        self.sessions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.sessions_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         if (vh := self.sessions_table.verticalHeader()):
             vh.setVisible(False)
-        self.sessions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.plan_tabs.addTab(self.sessions_table, "Sessions")
+        self.sessions_table.itemSelectionChanged.connect(self._on_session_selected)
+        sessions_splitter.addWidget(self.sessions_table)
+
+        self.session_detail = QTextEdit()
+        self.session_detail.setReadOnly(True)
+        self.session_detail.setPlaceholderText("Select a session to see the full protocol.")
+        self.session_detail.setMaximumHeight(140)
+        sessions_splitter.addWidget(self.session_detail)
+        sessions_splitter.setStretchFactor(0, 4)
+        sessions_splitter.setStretchFactor(1, 1)
+
+        sessions_layout.addWidget(sessions_splitter)
+        self.plan_tabs.addTab(sessions_widget, "Sessions")
 
         layout.addWidget(self.plan_tabs)
         return widget
@@ -334,7 +352,6 @@ class TrainingTab(QWidget):
         headers = ["Date", "Week", "Phase", "Type", "Duration", "Intensity", "Target %FTP"]
         if show_watts:
             headers.append("Target Watts")
-        headers.append("Description")
 
         self.sessions_table.setSortingEnabled(False)
         self.sessions_table.setRowCount(len(rows))
@@ -354,16 +371,48 @@ class TrainingTab(QWidget):
             ]
             if show_watts:
                 values.append(_compute_watts(pct, ftp))
-            values.append(row.get("description", ""))
 
             for col_idx, val in enumerate(values):
-                self.sessions_table.setItem(row_idx, col_idx, QTableWidgetItem(str(val)))
+                item = QTableWidgetItem(str(val))
+                if col_idx == 0:
+                    # store the full row dict on the date item for retrieval on selection
+                    item.setData(Qt.ItemDataRole.UserRole, row)
+                self.sessions_table.setItem(row_idx, col_idx, item)
 
         self.sessions_table.setSortingEnabled(True)
         self.sessions_table.resizeColumnsToContents()
         header = self.sessions_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
+
+    def _on_session_selected(self):
+        row_idx = self.sessions_table.currentRow()
+        if row_idx < 0:
+            self.session_detail.clear()
+            return
+        item = self.sessions_table.item(row_idx, 0)
+        if item is None:
+            return
+        row = item.data(Qt.ItemDataRole.UserRole)
+        if not row:
+            return
+
+        warmup = row.get("warmup", "").strip()
+        main_set = row.get("main_set", "").strip()
+        cooldown = row.get("cooldown", "").strip()
+        description = row.get("description", "").strip()
+
+        parts = []
+        if warmup:
+            parts.append(f"<b>Warm-up:</b> {warmup}")
+        if main_set:
+            parts.append(f"<b>Main set:</b> {main_set}")
+        if cooldown:
+            parts.append(f"<b>Cool-down:</b> {cooldown}")
+        if description:
+            parts.append(f"<br><i>{description}</i>")
+
+        self.session_detail.setHtml("<br>".join(parts))
 
     def _load_existing_plans(self):
         if PLAN_ORIGINAL_PATH.exists():

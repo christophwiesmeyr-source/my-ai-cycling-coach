@@ -110,16 +110,19 @@ def _build_sessions_prompt(plan_text: str, goals: dict) -> str:
 ## Output requirements
 - Output ONLY the CSV rows — no introduction, no commentary, no markdown fences
 - First row must be exactly this header:
-  date,week,phase,type,duration_min,intensity,target_power_pct_ftp,description
+  date,week,phase,type,duration_min,intensity,target_power_pct_ftp,warmup,main_set,cooldown,description
 - Column definitions:
   - date: ISO 8601 (YYYY-MM-DD), calculated from the plan start date {current_date}
   - week: integer week number within the plan (1 to {weeks})
   - phase: training phase (e.g. Base, Build, Peak, Taper)
   - type: session name (e.g. Z2 Endurance, Threshold Intervals, Recovery Ride, Long Ride)
-  - duration_min: integer minutes
-  - intensity: human-readable label (e.g. Zone 1, Zone 2, Tempo, Threshold, VO2max)
-  - target_power_pct_ftp: target power for the main effort as a % of FTP (e.g. <55%, 56-75%, 76-90%, 91-105%, 106-120%)
-  - description: one concise sentence on the purpose of this session
+  - duration_min: integer total session duration in minutes
+  - intensity: human-readable label for the main effort (e.g. Zone 1, Zone 2, Tempo, Threshold, VO2max)
+  - target_power_pct_ftp: target power for the main effort as a % of FTP range (e.g. <55%, 56-75%, 76-90%, 91-105%, 106-120%)
+  - warmup: warm-up protocol as plain text (e.g. 15 min @ Zone 1-2 easy spinning)
+  - main_set: core workout using interval notation (e.g. 3 x 10 min @ 91-105% FTP / 5 min @ Zone 1 recovery — or: 60 min steady @ Zone 2)
+  - cooldown: cool-down protocol as plain text (e.g. 10 min @ Zone 1 easy spinning)
+  - description: one concise sentence on the purpose and expected adaptation of this session
 - Include every training session — typically 4–6 per week
 - Do not include rest days
 - Do not wrap any field in quotes unless the field itself contains a comma"""

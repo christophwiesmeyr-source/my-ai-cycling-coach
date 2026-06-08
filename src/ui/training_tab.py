@@ -49,6 +49,7 @@ class TrainingTab(QWidget):
         self._load_existing_plans()
         self._load_sessions_table()
         self._load_goals()
+        self._connect_autosave()
 
     # ------------------------------------------------------------------ #
     # UI construction                                                      #
@@ -106,6 +107,12 @@ class TrainingTab(QWidget):
         self.spin_ftp.setValue(0)
         self.spin_ftp.setSuffix(" W  (0 = unknown)")
         form.addRow("Current FTP:", self.spin_ftp)
+
+        self.spin_max_hr = QSpinBox()
+        self.spin_max_hr.setRange(0, 250)
+        self.spin_max_hr.setValue(0)
+        self.spin_max_hr.setSuffix(" bpm  (0 = unknown)")
+        form.addRow("Max heart rate:", self.spin_max_hr)
 
         self.combo_level = QComboBox()
         self.combo_level.addItems(["Beginner", "Intermediate", "Advanced"])
@@ -306,13 +313,22 @@ class TrainingTab(QWidget):
     def _on_chat_chunk(self, chunk: str):
         cursor = self.chat_display.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
+        if self._stream_text_start is None:
+            self._stream_text_start = cursor.position()
         cursor.insertText(chunk)
         self.chat_display.setTextCursor(cursor)
         self.chat_display.ensureCursorVisible()
 
     def _on_chat_finished(self, full_response: str):
         self.chat_session.add_assistant_message(full_response)
-        self.chat_display.append("")  # blank line after response
+        if self._stream_text_start is not None:
+            cursor = self.chat_display.textCursor()
+            cursor.setPosition(self._stream_text_start)
+            cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.insertHtml(md.markdown(full_response, extensions=["tables", "fenced_code"]))
+            self._stream_text_start = None
+        self.chat_display.append("")
         self._set_chat_input_enabled(True)
 
     def _on_chat_error(self, error: str):
@@ -337,6 +353,7 @@ class TrainingTab(QWidget):
             "weeks_until_event": weeks_until,
             "available_hours_per_week": self.spin_hours.value(),
             "current_ftp_watts": self.spin_ftp.value() or None,
+            "max_hr_bpm": self.spin_max_hr.value() or None,
             "experience_level": self.combo_level.currentText(),
             "additional_notes": self.input_notes.toPlainText().strip(),
         }
@@ -442,6 +459,19 @@ class TrainingTab(QWidget):
             li {{ margin: 2px 0; }}
         </style></head><body>{body}</body></html>"""
 
+    def _connect_autosave(self):
+        self.input_goal.textChanged.connect(self._autosave_goals)
+        self.input_event_name.textChanged.connect(self._autosave_goals)
+        self.input_event_date.dateChanged.connect(self._autosave_goals)
+        self.spin_hours.valueChanged.connect(self._autosave_goals)
+        self.spin_ftp.valueChanged.connect(self._autosave_goals)
+        self.spin_max_hr.valueChanged.connect(self._autosave_goals)
+        self.combo_level.currentTextChanged.connect(self._autosave_goals)
+        self.input_notes.textChanged.connect(self._autosave_goals)
+
+    def _autosave_goals(self):
+        self._save_goals(self._collect_goals())
+
     def _save_goals(self, goals: dict):
         GOALS_PATH.parent.mkdir(parents=True, exist_ok=True)
         GOALS_PATH.write_text(json.dumps(goals, indent=2))
@@ -463,6 +493,8 @@ class TrainingTab(QWidget):
             self.spin_hours.setValue(int(goals["available_hours_per_week"]))
         if goals.get("current_ftp_watts"):
             self.spin_ftp.setValue(int(goals["current_ftp_watts"]))
+        if goals.get("max_hr_bpm"):
+            self.spin_max_hr.setValue(int(goals["max_hr_bpm"]))
         if goals.get("experience_level"):
             self.combo_level.setCurrentText(goals["experience_level"])
         self.input_notes.setPlainText(goals.get("additional_notes") or "")
@@ -481,6 +513,7 @@ class TrainingTab(QWidget):
 
     def _append_chat_assistant_start(self):
         self.chat_display.append("<b>Coach:</b> ")
+        self._stream_text_start = None  # set lazily on first chunk
 
     def _append_chat_system(self, text: str):
         self.chat_display.append(f"<i>{text}</i>\n")

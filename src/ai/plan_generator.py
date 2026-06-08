@@ -26,8 +26,9 @@ def generate_plan(goals: dict) -> str:
     )
 
     plan = _first_text(message.content)
-    PLAN_ORIGINAL_PATH.write_text(plan)
-    return plan
+    full_plan = _build_plan_header(goals) + "\n\n" + plan
+    PLAN_ORIGINAL_PATH.write_text(full_plan)
+    return full_plan
 
 
 def generate_sessions(plan_text: str, goals: dict) -> str:
@@ -54,6 +55,34 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 # ------------------------------------------------------------------ #
 # Prompt builders                                                      #
 # ------------------------------------------------------------------ #
+
+def _build_plan_header(goals: dict) -> str:
+    """Markdown block recording the parameter values used to generate this plan."""
+    rows = []
+    if goals.get("main_goal"):
+        rows.append(("Goal", goals["main_goal"]))
+    if goals.get("event_name"):
+        rows.append(("Event", goals["event_name"]))
+    if goals.get("event_date"):
+        rows.append(("Event date", goals["event_date"]))
+    if goals.get("weeks_until_event"):
+        rows.append(("Weeks to event", goals["weeks_until_event"]))
+    if goals.get("available_hours_per_week"):
+        rows.append(("Hours per week", f"{goals['available_hours_per_week']} h"))
+    if goals.get("current_ftp_watts"):
+        rows.append(("FTP", f"{goals['current_ftp_watts']} W"))
+    if goals.get("max_hr_bpm"):
+        rows.append(("Max HR", f"{goals['max_hr_bpm']} bpm"))
+    if goals.get("experience_level"):
+        rows.append(("Experience", goals["experience_level"]))
+    if goals.get("additional_notes"):
+        rows.append(("Notes", goals["additional_notes"]))
+    if goals.get("current_date"):
+        rows.append(("Generated on", goals["current_date"]))
+
+    table_rows = "\n".join(f"| {k} | {v} |" for k, v in rows)
+    return f"## Plan parameters\n\n| Parameter | Value |\n|-----------|-------|\n{table_rows}\n\n---"
+
 
 def _build_plan_prompt(goals: dict) -> str:
     event_name = goals.get("event_name") or "target event"

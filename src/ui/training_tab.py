@@ -79,8 +79,9 @@ class TrainingTab(QWidget):
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
-        self.input_goal = QLineEdit()
+        self.input_goal = QTextEdit()
         self.input_goal.setPlaceholderText("e.g. Complete a gran fondo, Improve FTP")
+        self.input_goal.setFixedHeight(70)
         form.addRow("Main goal:", self.input_goal)
 
         self.input_event_name = QLineEdit()
@@ -328,7 +329,7 @@ class TrainingTab(QWidget):
         days_until = (event_date - today).days
         weeks_until = max(days_until // 7, 1)
         return {
-            "main_goal": self.input_goal.text().strip(),
+            "main_goal": self.input_goal.toPlainText().strip(),
             "event_name": self.input_event_name.text().strip(),
             "event_date": event_date.isoformat(),
             "current_date": today.isoformat(),
@@ -452,7 +453,7 @@ class TrainingTab(QWidget):
             goals = json.loads(GOALS_PATH.read_text())
         except (json.JSONDecodeError, OSError):
             return
-        self.input_goal.setText(goals.get("main_goal") or "")
+        self.input_goal.setPlainText(goals.get("main_goal") or "")
         self.input_event_name.setText(goals.get("event_name") or "")
         if goals.get("event_date"):
             q_date = QDate.fromString(goals["event_date"], "yyyy-MM-dd")

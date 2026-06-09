@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtGui import QColor, QBrush
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
 from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
@@ -388,6 +389,11 @@ class TrainingTab(QWidget):
 
         read_only = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
         editable = read_only | Qt.ItemFlag.ItemIsEditable
+        today_str = date.today().isoformat()
+
+        color_done    = QColor(200, 235, 200)   # soft green
+        color_missed  = QColor(235, 200, 200)   # soft red
+        color_today   = QColor(200, 220, 245)   # soft blue
 
         for row_idx, row in enumerate(rows):
             pct = row.get("target_power_pct_ftp", "")
@@ -407,12 +413,21 @@ class TrainingTab(QWidget):
                 values.append(_compute_watts(pct, ftp))
             values += [entry.get("completed_date", ""), entry.get("comment", "")]
 
+            if plan_date == today_str:
+                row_color = color_today
+            elif plan_date < today_str:
+                row_color = color_done if entry.get("completed_date") else color_missed
+            else:
+                row_color = None
+
             for col_idx, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
                 if col_idx == 0:
                     item.setData(Qt.ItemDataRole.UserRole, row)
                 is_editable = col_idx in (completed_col, comment_col)
                 item.setFlags(editable if is_editable else read_only)
+                if row_color:
+                    item.setBackground(QBrush(row_color))
                 self.sessions_table.setItem(row_idx, col_idx, item)
 
         self.sessions_table.setSortingEnabled(True)
@@ -474,6 +489,33 @@ class TrainingTab(QWidget):
             li {{ margin: 2px 0; }}
         </style></head><body>{body}</body></html>"""
 
+    def _refresh_row_colors(self, log: dict):
+        today_str = date.today().isoformat()
+        color_done   = QColor(200, 235, 200)
+        color_missed = QColor(235, 200, 200)
+        color_today  = QColor(200, 220, 245)
+
+        self._loading_sessions = True
+        for row_idx in range(self.sessions_table.rowCount()):
+            date_item = self.sessions_table.item(row_idx, 0)
+            if not date_item:
+                continue
+            plan_date = date_item.text()
+            entry = log.get(plan_date, {})
+
+            if plan_date == today_str:
+                row_color = color_today
+            elif plan_date < today_str:
+                row_color = color_done if entry.get("completed_date") else color_missed
+            else:
+                row_color = None
+
+            for col_idx in range(self.sessions_table.columnCount()):
+                item = self.sessions_table.item(row_idx, col_idx)
+                if item:
+                    item.setBackground(QBrush(row_color) if row_color else QBrush())
+        self._loading_sessions = False
+
     def _prefill_completed_date(self, row: int, col: int):
         completed_col = self.sessions_table.columnCount() - 2
         if col != completed_col:
@@ -512,6 +554,7 @@ class TrainingTab(QWidget):
                 log[plan_date] = {"completed_date": completed, "comment": comment}
         SESSIONS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         SESSIONS_LOG_PATH.write_text(json.dumps(log, indent=2))
+        self._refresh_row_colors(log)
 
     def _connect_autosave(self):
         self.input_goal.textChanged.connect(self._autosave_goals)

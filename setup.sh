@@ -34,14 +34,32 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Install desktop integration (icon + .desktop file)
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ICON_SRC="$INSTALL_DIR/assets/icon.svg"
+ICON_DEST="$HOME/.local/share/icons/my-ai-cycling-coach.svg"
+DESKTOP_DEST="$HOME/.local/share/applications/my-ai-cycling-coach.desktop"
+
+mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps" "$HOME/.local/share/applications"
+cp "$ICON_SRC" "$ICON_DEST"
+cp "$ICON_SRC" "$HOME/.local/share/icons/hicolor/scalable/apps/my-ai-cycling-coach.svg"
+
+cat > "$DESKTOP_DEST" <<EOF
+[Desktop Entry]
+Name=My AI Cycling Coach
+Exec=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/main.py
+Icon=my-ai-cycling-coach
+Type=Application
+Categories=Sports;
+StartupWMClass=my-ai-cycling-coach
+EOF
+
+echo "✓ Desktop icon installed"
+
 echo ""
 echo "✅ Setup complete!"
 echo ""
 echo "📝 To run the application:"
 echo "   source venv/bin/activate"
 echo "   python main.py"
-echo ""
-echo "💡 To load FIT files:"
-echo "   1. Copy .fit files to the 'data/' directory, or"
-echo "   2. Click 'Open Folder' in the application"
 echo ""

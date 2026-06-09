@@ -1,0 +1,3 @@
+- Application logo
+- Improve tooling for agent
+- Incorporate feedback into session list

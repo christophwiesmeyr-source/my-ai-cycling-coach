@@ -11,6 +11,7 @@ PLAN_ORIGINAL_PATH = APP_DIR / "plan_original.md"
 PLAN_ADAPTED_PATH = APP_DIR / "plan_adapted.md"
 SESSIONS_ORIGINAL_PATH = APP_DIR / "sessions_original.csv"
 SESSIONS_ADAPTED_PATH = APP_DIR / "sessions_adapted.csv"
+SESSIONS_LOG_PATH = APP_DIR / "sessions_log.json"
 GOALS_PATH = APP_DIR / "goals.json"
 
 # AI settings

@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QDate
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
-from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH
+from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
 
 
@@ -45,6 +45,7 @@ class TrainingTab(QWidget):
         self.strava_client = strava_client
         self.chat_session = ChatSession()
         self._active_worker = None
+        self._loading_sessions = False
         self._init_ui()
         self._load_existing_plans()
         self._load_sessions_table()
@@ -175,7 +176,7 @@ class TrainingTab(QWidget):
         sessions_splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.sessions_table = QTableWidget()
-        self.sessions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.sessions_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.SelectedClicked)
         self.sessions_table.setSortingEnabled(True)
         self.sessions_table.setAlternatingRowColors(True)
         self.sessions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -364,6 +365,7 @@ class TrainingTab(QWidget):
 
         ftp = self.spin_ftp.value()
         show_watts = ftp > 0
+        log = self._load_sessions_log()
 
         with open(SESSIONS_ORIGINAL_PATH, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
@@ -374,16 +376,26 @@ class TrainingTab(QWidget):
         headers = ["Date", "Week", "Phase", "Type", "Duration", "Intensity", "Target %FTP"]
         if show_watts:
             headers.append("Target Watts")
+        headers += ["Completed", "Comment"]
+        completed_col = len(headers) - 2
+        comment_col = len(headers) - 1
 
+        self._loading_sessions = True
         self.sessions_table.setSortingEnabled(False)
         self.sessions_table.setRowCount(len(rows))
         self.sessions_table.setColumnCount(len(headers))
         self.sessions_table.setHorizontalHeaderLabels(headers)
 
+        read_only = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        editable = read_only | Qt.ItemFlag.ItemIsEditable
+
         for row_idx, row in enumerate(rows):
             pct = row.get("target_power_pct_ftp", "")
+            plan_date = row.get("date", "")
+            entry = log.get(plan_date, {})
+
             values = [
-                row.get("date", ""),
+                plan_date,
                 row.get("week", ""),
                 row.get("phase", ""),
                 row.get("type", ""),
@@ -393,12 +405,14 @@ class TrainingTab(QWidget):
             ]
             if show_watts:
                 values.append(_compute_watts(pct, ftp))
+            values += [entry.get("completed_date", ""), entry.get("comment", "")]
 
             for col_idx, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
                 if col_idx == 0:
-                    # store the full row dict on the date item for retrieval on selection
                     item.setData(Qt.ItemDataRole.UserRole, row)
+                is_editable = col_idx in (completed_col, comment_col)
+                item.setFlags(editable if is_editable else read_only)
                 self.sessions_table.setItem(row_idx, col_idx, item)
 
         self.sessions_table.setSortingEnabled(True)
@@ -406,6 +420,7 @@ class TrainingTab(QWidget):
         header = self.sessions_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
+        self._loading_sessions = False
 
     def _on_session_selected(self):
         row_idx = self.sessions_table.currentRow()
@@ -459,6 +474,45 @@ class TrainingTab(QWidget):
             li {{ margin: 2px 0; }}
         </style></head><body>{body}</body></html>"""
 
+    def _prefill_completed_date(self, row: int, col: int):
+        completed_col = self.sessions_table.columnCount() - 2
+        if col != completed_col:
+            return
+        item = self.sessions_table.item(row, col)
+        if item and item.text().strip():
+            return
+        if item is None:
+            item = QTableWidgetItem()
+            self.sessions_table.setItem(row, col, item)
+        item.setText(date.today().isoformat())
+
+    def _load_sessions_log(self) -> dict:
+        try:
+            return json.loads(SESSIONS_LOG_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _save_sessions_log(self):
+        if self._loading_sessions:
+            return
+        log = {}
+        date_col = 0
+        completed_col = self.sessions_table.columnCount() - 2
+        comment_col = self.sessions_table.columnCount() - 1
+        for row_idx in range(self.sessions_table.rowCount()):
+            date_item = self.sessions_table.item(row_idx, date_col)
+            completed_item = self.sessions_table.item(row_idx, completed_col)
+            comment_item = self.sessions_table.item(row_idx, comment_col)
+            if not date_item:
+                continue
+            plan_date = date_item.text()
+            completed = completed_item.text().strip() if completed_item else ""
+            comment = comment_item.text().strip() if comment_item else ""
+            if completed or comment:
+                log[plan_date] = {"completed_date": completed, "comment": comment}
+        SESSIONS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SESSIONS_LOG_PATH.write_text(json.dumps(log, indent=2))
+
     def _connect_autosave(self):
         self.input_goal.textChanged.connect(self._autosave_goals)
         self.input_event_name.textChanged.connect(self._autosave_goals)
@@ -468,6 +522,8 @@ class TrainingTab(QWidget):
         self.spin_max_hr.valueChanged.connect(self._autosave_goals)
         self.combo_level.currentTextChanged.connect(self._autosave_goals)
         self.input_notes.textChanged.connect(self._autosave_goals)
+        self.sessions_table.itemChanged.connect(self._save_sessions_log)
+        self.sessions_table.cellDoubleClicked.connect(self._prefill_completed_date)
 
     def _autosave_goals(self):
         self._save_goals(self._collect_goals())

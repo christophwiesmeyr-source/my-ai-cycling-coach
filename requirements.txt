@@ -9,3 +9,4 @@ anthropic
 markdown
 pytest
 pytest-mock
+pytest-cov

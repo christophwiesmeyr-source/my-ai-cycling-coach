@@ -1,12 +1,10 @@
 """Training plan generator — plan narrative and structured session list"""
+from typing import cast
+
 from anthropic.types import TextBlock
 
 from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL
 from .client import get_client
-
-
-def _first_text(content: list) -> str:
-    return next(b.text for b in content if isinstance(b, TextBlock))
 
 
 def generate_plan(goals: dict) -> str:
@@ -25,7 +23,7 @@ def generate_plan(goals: dict) -> str:
         messages=[{"role": "user", "content": _build_plan_prompt(goals)}],
     )
 
-    plan = _first_text(message.content)
+    plan = cast(TextBlock, message.content[0]).text
     full_plan = _build_plan_header(goals) + "\n\n" + plan
     PLAN_ORIGINAL_PATH.write_text(full_plan)
     return full_plan
@@ -46,7 +44,7 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
         messages=[{"role": "user", "content": _build_sessions_prompt(plan_text, goals)}],
     )
 
-    raw = message.content[0].text.strip()
+    raw = cast(TextBlock, message.content[0]).text.strip()
     csv_text = _extract_csv(raw)
     SESSIONS_ORIGINAL_PATH.write_text(csv_text)
     return csv_text
@@ -152,7 +150,7 @@ def _build_sessions_prompt(plan_text: str, goals: dict) -> str:
   - main_set: core workout using interval notation (e.g. 3 x 10 min @ 91-105% FTP / 5 min @ Zone 1 recovery — or: 60 min steady @ Zone 2)
   - cooldown: cool-down protocol as plain text (e.g. 10 min @ Zone 1 easy spinning)
   - description: one concise sentence on the purpose and expected adaptation of this session
-- Include every training session — typically 4–6 per week
+- Include every training session — typically 2–6 per week
 - Do not include rest days
 - Do not wrap any field in quotes unless the field itself contains a comma"""
 

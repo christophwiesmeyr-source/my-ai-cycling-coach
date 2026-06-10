@@ -20,22 +20,6 @@ from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
 
 
-def _compute_watts(pct_str: str, ftp: int) -> str:
-    """Convert a %FTP range string to absolute watts given an FTP value."""
-    s = pct_str.strip()
-    m = re.match(r'<(\d+)%', s)
-    if m:
-        return f"<{round(int(m.group(1)) / 100 * ftp)} W"
-    m = re.match(r'>(\d+)%', s)
-    if m:
-        return f">{round(int(m.group(1)) / 100 * ftp)} W"
-    m = re.match(r'(\d+)[-–](\d+)%', s)
-    if m:
-        lo = round(int(m.group(1)) / 100 * ftp)
-        hi = round(int(m.group(2)) / 100 * ftp)
-        return f"{lo}–{hi} W"
-    return ""
-
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
 LABEL_STYLE_SUBHEADER = "font-weight: bold;"
 
@@ -375,8 +359,6 @@ class TrainingTab(QWidget):
             return
 
         headers = ["Date", "Week", "Phase", "Type", "Duration", "Intensity", "Target %FTP"]
-        if show_watts:
-            headers.append("Target Watts")
         headers += ["Completed", "Comment"]
         completed_col = len(headers) - 2
         comment_col = len(headers) - 1
@@ -409,8 +391,6 @@ class TrainingTab(QWidget):
                 row.get("intensity", ""),
                 pct,
             ]
-            if show_watts:
-                values.append(_compute_watts(pct, ftp))
             values += [entry.get("completed_date", ""), entry.get("comment", "")]
 
             if plan_date == today_str:

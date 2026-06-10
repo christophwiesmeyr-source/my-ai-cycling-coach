@@ -45,3 +45,5 @@ data/*.fit
 .cache/
 *.log
 dev_files/
+features_notes.md
+.coverage

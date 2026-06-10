@@ -67,9 +67,9 @@ TOOLS = [
         "name": "get_activity_zones",
         "description": (
             "Break down a specific activity by time spent in each power zone (Z1–Z6, "
-            "Coggan, relative to FTP) and, if max heart rate is provided, each HR zone "
-            "(Z1–Z5, relative to max HR). Use this to check whether the athlete trained "
-            "at the intended intensity. FTP is loaded automatically from stored goals if not provided."
+            "Coggan, relative to FTP) and, if max heart rate is set in the athlete's goals, "
+            "each HR zone (Z1–Z5, relative to max HR). FTP and max HR are loaded automatically "
+            "from stored goals. Use this to check whether the athlete trained at the intended intensity."
         ),
         "input_schema": {
             "type": "object",
@@ -77,14 +77,6 @@ TOOLS = [
                 "activity_id": {
                     "type": "integer",
                     "description": "The Strava activity ID.",
-                },
-                "ftp_watts": {
-                    "type": "integer",
-                    "description": "The athlete's FTP in watts. If omitted, loaded from stored goals.",
-                },
-                "max_hr_bpm": {
-                    "type": "integer",
-                    "description": "The athlete's maximum heart rate in bpm. Required for HR zone breakdown.",
                 },
             },
             "required": ["activity_id"],
@@ -147,9 +139,7 @@ def _execute_tool(block, strava_client) -> str:
     if block.name == "get_activity_power_curve":
         return _get_activity_power_curve(strava_client, int(block.input["activity_id"]))
     if block.name == "get_activity_zones":
-        ftp = block.input.get("ftp_watts")
-        max_hr = block.input.get("max_hr_bpm")
-        return _get_activity_zones(strava_client, int(block.input["activity_id"]), ftp, max_hr)
+        return _get_activity_zones(strava_client, int(block.input["activity_id"]))
     return f"Unknown tool: {block.name}"
 
 
@@ -222,63 +212,66 @@ def _get_activity_power_curve(strava_client, activity_id: int) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_zones(strava_client, activity_id: int, ftp_watts, max_hr_bpm) -> str:
+def _zone_breakdown(series, zones, reference, dt: float) -> list:
+    valid = ~np.isnan(series)
+    total_sec = int(np.sum(valid) * dt)
+    lines = []
+    for name, lo_pct, hi_pct in zones:
+        lo = reference * lo_pct / 100
+        if hi_pct is None:
+            in_zone = valid & (series >= lo)
+        else:
+            hi = reference * hi_pct / 100
+            in_zone = valid & (series >= lo) & (series < hi)
+        secs = int(np.sum(in_zone) * dt)
+        pct = 100 * secs / total_sec if total_sec > 0 else 0
+        h, rem = divmod(secs, 3600)
+        m, s = divmod(rem, 60)
+        time_str = f"{h}h{m:02d}m{s:02d}s" if h > 0 else f"{m}m{s:02d}s"
+        lines.append(f"  {name}: {time_str} ({pct:.1f}%)")
+    return lines
+
+
+def _get_activity_zones(strava_client, activity_id: int) -> str:
     try:
         goals = json.loads(GOALS_PATH.read_text())
     except Exception:
-        goals = {}
+        return "Training goals not available. Set your FTP and max heart rate in Training Goals."
 
-    if ftp_watts is None:
-        ftp_watts = int(goals.get("current_ftp_watts") or 0)
-    if max_hr_bpm is None:
-        max_hr_bpm = int(goals.get("max_hr_bpm") or 0) or None
+    ftp_watts = int(goals.get("current_ftp_watts") or 0)
+    max_hr_bpm = int(goals.get("max_hr_bpm") or 0) or None
 
-    if not ftp_watts:
-        return "FTP not available. Provide ftp_watts or set it in Training Goals."
+    if not ftp_watts and not max_hr_bpm:
+        return "Neither FTP nor max heart rate is set in Training Goals. At least one is required."
 
     try:
         activity = strava_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
-    power = activity.get_time_series("power")
-    if power is None or len(power) == 0:
-        return f"No power data available for activity {activity_id}."
-
     time_array = activity.get_time_array()
     dt = float(time_array[1] - time_array[0]) if len(time_array) > 1 else 1.0
 
-    def _zone_breakdown(series, zones, reference, ref_label):
-        valid = ~np.isnan(series)
-        total_sec = int(np.sum(valid) * dt)
-        lines = [f"  (reference: {ref_label} = {reference})"]
-        for name, lo_pct, hi_pct in zones:
-            lo = reference * lo_pct / 100
-            if hi_pct is None:
-                in_zone = valid & (series >= lo)
-            else:
-                hi = reference * hi_pct / 100
-                in_zone = valid & (series >= lo) & (series < hi)
-            secs = int(np.sum(in_zone) * dt)
-            pct = 100 * secs / total_sec if total_sec > 0 else 0
-            h, rem = divmod(secs, 3600)
-            m, s = divmod(rem, 60)
-            time_str = f"{h}h{m:02d}m{s:02d}s" if h > 0 else f"{m}m{s:02d}s"
-            lines.append(f"  {name}: {time_str} ({pct:.1f}%)")
-        return lines
-
     lines = [f"Activity {activity_id} zones:"]
-    lines.append("Power zones (Coggan):")
-    lines += _zone_breakdown(power, _POWER_ZONES, ftp_watts, f"FTP {ftp_watts} W")
+
+    if ftp_watts:
+        power = activity.get_time_series("power")
+        if power is not None and len(power) > 0:
+            lines.append(f"Power zones (Coggan, FTP = {ftp_watts} W):")
+            lines += _zone_breakdown(power, _POWER_ZONES, ftp_watts, dt)
+        else:
+            lines.append("Power zones: no power data for this activity.")
+    else:
+        lines.append("Power zones: set FTP in Training Goals to see power zone breakdown.")
 
     if max_hr_bpm:
         hr = activity.get_time_series("heart_rate")
         if hr is not None and len(hr) > 0:
-            lines.append("HR zones:")
-            lines += _zone_breakdown(hr, _HR_ZONES, max_hr_bpm, f"max HR {max_hr_bpm} bpm")
+            lines.append(f"HR zones (max HR = {max_hr_bpm} bpm):")
+            lines += _zone_breakdown(hr, _HR_ZONES, max_hr_bpm, dt)
         else:
             lines.append("HR zones: no heart rate data for this activity.")
     else:
-        lines.append("HR zones: provide max_hr_bpm to see HR zone breakdown.")
+        lines.append("HR zones: set max heart rate in Training Goals to see HR zone breakdown.")
 
     return "\n".join(lines)

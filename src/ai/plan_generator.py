@@ -15,7 +15,7 @@ def generate_plan(goals: dict) -> str:
     client = get_client()
     message = client.messages.create(
         model=AI_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         system=(
             "You are an expert cycling coach. Create detailed, structured training plans "
             "that are realistic, evidence-based, and tailored to the athlete's goals and "
@@ -37,7 +37,7 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
     client = get_client()
     message = client.messages.create(
         model=AI_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         system=(
             "You are a cycling coach assistant that converts training plans into structured "
             "session data. Output only clean CSV — no prose, no markdown fences."
@@ -108,6 +108,7 @@ def _build_plan_prompt(goals: dict) -> str:
 4. **Key workouts**: Describe 2–3 signature workouts per phase with full instructions (warm-up, intervals, cool-down).
 5. **Progression**: How training load increases week-to-week and the criteria for a recovery week.
 6. **Metrics to track**: What the athlete should monitor to confirm the plan is working.
+7. **FTP tests**: Schedule an FTP test at the start of the plan to establish a baseline, and again after each major phase transition (e.g. end of Base, end of Build). Do not schedule a test within 2 weeks of the target event.
 
 Be specific and practical. All dates and week numbers must be consistent with the {weeks}-week window above."""
 

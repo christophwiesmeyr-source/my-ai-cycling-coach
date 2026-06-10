@@ -2,7 +2,9 @@
 import csv
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
+from typing import Any, Callable
 
 import markdown as md
 
@@ -17,11 +19,21 @@ from PyQt6.QtGui import QColor, QBrush
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
 from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
+from src.goals import GOAL_FIELDS
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
 
 
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
 LABEL_STYLE_SUBHEADER = "font-weight: bold;"
+
+
+@dataclass
+class _GoalField:
+    """Descriptor binding a training-goals form field to its JSON key."""
+    key: str
+    signal: Any
+    read: Callable[[], Any]
+    write: Callable[[Any], None]
 
 
 class TrainingTab(QWidget):
@@ -66,44 +78,137 @@ class TrainingTab(QWidget):
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
+        self._goal_fields: list[_GoalField] = []
+
+        self.spin_age = QSpinBox()
+        self.spin_age.setRange(0, 100)
+        self.spin_age.setValue(0)
+        self.spin_age.setSuffix(" yrs  (0 = unknown)")
+        form.addRow("Age:", self.spin_age)
+        self._goal_fields.append(_GoalField(
+            key="age_years",
+            signal=self.spin_age.valueChanged,
+            read=lambda: self.spin_age.value() or None,
+            write=lambda v: self.spin_age.setValue(int(v)) if v else None,
+        ))
+
+        self.spin_weight = QSpinBox()
+        self.spin_weight.setRange(0, 200)
+        self.spin_weight.setValue(0)
+        self.spin_weight.setSuffix(" kg  (0 = unknown)")
+        form.addRow("Weight:", self.spin_weight)
+        self._goal_fields.append(_GoalField(
+            key="weight_kg",
+            signal=self.spin_weight.valueChanged,
+            read=lambda: self.spin_weight.value() or None,
+            write=lambda v: self.spin_weight.setValue(int(v)) if v else None,
+        ))
+
+        self.combo_gender = QComboBox()
+        self.combo_gender.addItems(["Prefer not to say", "Male", "Female", "Other"])
+        form.addRow("Gender:", self.combo_gender)
+        self._goal_fields.append(_GoalField(
+            key="gender",
+            signal=self.combo_gender.currentTextChanged,
+            read=lambda: self.combo_gender.currentText(),
+            write=lambda v: self.combo_gender.setCurrentText(v) if v else None,
+        ))
+
         self.input_goal = QTextEdit()
         self.input_goal.setPlaceholderText("e.g. Complete a gran fondo, Improve FTP")
         self.input_goal.setFixedHeight(70)
         form.addRow("Main goal:", self.input_goal)
+        self._goal_fields.append(_GoalField(
+            key="main_goal",
+            signal=self.input_goal.textChanged,
+            read=lambda: self.input_goal.toPlainText().strip(),
+            write=lambda v: self.input_goal.setPlainText(v or ""),
+        ))
 
         self.input_event_name = QLineEdit()
         self.input_event_name.setPlaceholderText("e.g. Ötztaler Radmarathon (optional)")
         form.addRow("Event name:", self.input_event_name)
+        self._goal_fields.append(_GoalField(
+            key="event_name",
+            signal=self.input_event_name.textChanged,
+            read=lambda: self.input_event_name.text().strip(),
+            write=lambda v: self.input_event_name.setText(v or ""),
+        ))
 
+        # event_date is special: its read contributes computed fields and its
+        # write requires date validation, so it is handled explicitly in
+        # _collect_goals and _load_goals. Only the autosave signal is registered.
         self.input_event_date = QDateEdit()
         self.input_event_date.setCalendarPopup(True)
         self.input_event_date.setDisplayFormat("dd MMM yyyy")
         self.input_event_date.setMinimumDate(QDate.currentDate().addDays(1))
         self.input_event_date.setDate(QDate.currentDate().addMonths(4))
         form.addRow("Event date:", self.input_event_date)
+        self._goal_fields.append(_GoalField(
+            key="_event_date",
+            signal=self.input_event_date.dateChanged,
+            read=lambda: None,
+            write=lambda v: None,
+        ))
 
         self.spin_hours = QSpinBox()
         self.spin_hours.setRange(1, 30)
         self.spin_hours.setValue(8)
         self.spin_hours.setSuffix(" h/week")
         form.addRow("Available time:", self.spin_hours)
+        self._goal_fields.append(_GoalField(
+            key="available_hours_per_week",
+            signal=self.spin_hours.valueChanged,
+            read=lambda: self.spin_hours.value(),
+            write=lambda v: self.spin_hours.setValue(int(v)) if v else None,
+        ))
+
+        self.spin_sessions = QSpinBox()
+        self.spin_sessions.setRange(1, 14)
+        self.spin_sessions.setValue(5)
+        self.spin_sessions.setSuffix(" sessions/week")
+        form.addRow("Sessions per week:", self.spin_sessions)
+        self._goal_fields.append(_GoalField(
+            key="sessions_per_week",
+            signal=self.spin_sessions.valueChanged,
+            read=lambda: self.spin_sessions.value(),
+            write=lambda v: self.spin_sessions.setValue(int(v)) if v else None,
+        ))
 
         self.spin_ftp = QSpinBox()
         self.spin_ftp.setRange(0, 600)
         self.spin_ftp.setValue(0)
         self.spin_ftp.setSuffix(" W  (0 = unknown)")
         form.addRow("Current FTP:", self.spin_ftp)
+        self._goal_fields.append(_GoalField(
+            key="current_ftp_watts",
+            signal=self.spin_ftp.valueChanged,
+            read=lambda: self.spin_ftp.value() or None,
+            write=lambda v: self.spin_ftp.setValue(int(v)) if v else None,
+        ))
 
         self.spin_max_hr = QSpinBox()
         self.spin_max_hr.setRange(0, 250)
         self.spin_max_hr.setValue(0)
         self.spin_max_hr.setSuffix(" bpm  (0 = unknown)")
         form.addRow("Max heart rate:", self.spin_max_hr)
+        self._goal_fields.append(_GoalField(
+            key="max_hr_bpm",
+            signal=self.spin_max_hr.valueChanged,
+            read=lambda: self.spin_max_hr.value() or None,
+            write=lambda v: self.spin_max_hr.setValue(int(v)) if v else None,
+        ))
 
         self.combo_level = QComboBox()
         self.combo_level.addItems(["Beginner", "Intermediate", "Advanced"])
         self.combo_level.setCurrentText("Intermediate")
         form.addRow("Experience:", self.combo_level)
+        self._goal_fields.append(_GoalField(
+            key="experience_level",
+            signal=self.combo_level.currentTextChanged,
+            read=lambda: self.combo_level.currentText(),
+            write=lambda v: self.combo_level.setCurrentText(v) if v else None,
+        ))
 
         self.input_notes = QTextEdit()
         self.input_notes.setPlaceholderText(
@@ -111,6 +216,19 @@ class TrainingTab(QWidget):
         )
         self.input_notes.setFixedHeight(70)
         form.addRow("Notes:", self.input_notes)
+        self._goal_fields.append(_GoalField(
+            key="additional_notes",
+            signal=self.input_notes.textChanged,
+            read=lambda: self.input_notes.toPlainText().strip(),
+            write=lambda v: self.input_notes.setPlainText(v or ""),
+        ))
+
+        _registered = {f.key for f in self._goal_fields if not f.key.startswith("_")}
+        _expected = {gm.key for gm in GOAL_FIELDS}
+        assert _registered == _expected, (
+            f"Goal field mismatch — in UI only: {_registered - _expected}, "
+            f"in GOAL_FIELDS only: {_expected - _registered}"
+        )
 
         layout.addLayout(form)
         layout.addSpacing(12)
@@ -330,19 +448,16 @@ class TrainingTab(QWidget):
         event_date = self.input_event_date.date().toPyDate()
         days_until = (event_date - today).days
         weeks_until = max(days_until // 7, 1)
-        return {
-            "main_goal": self.input_goal.toPlainText().strip(),
-            "event_name": self.input_event_name.text().strip(),
+        goals = {
             "event_date": event_date.isoformat(),
             "current_date": today.isoformat(),
             "days_until_event": days_until,
             "weeks_until_event": weeks_until,
-            "available_hours_per_week": self.spin_hours.value(),
-            "current_ftp_watts": self.spin_ftp.value() or None,
-            "max_hr_bpm": self.spin_max_hr.value() or None,
-            "experience_level": self.combo_level.currentText(),
-            "additional_notes": self.input_notes.toPlainText().strip(),
         }
+        for f in self._goal_fields:
+            if not f.key.startswith("_"):
+                goals[f.key] = f.read()
+        return goals
 
     def _load_sessions_table(self):
         if not SESSIONS_ORIGINAL_PATH.exists():
@@ -537,14 +652,8 @@ class TrainingTab(QWidget):
         self._refresh_row_colors(log)
 
     def _connect_autosave(self):
-        self.input_goal.textChanged.connect(self._autosave_goals)
-        self.input_event_name.textChanged.connect(self._autosave_goals)
-        self.input_event_date.dateChanged.connect(self._autosave_goals)
-        self.spin_hours.valueChanged.connect(self._autosave_goals)
-        self.spin_ftp.valueChanged.connect(self._autosave_goals)
-        self.spin_max_hr.valueChanged.connect(self._autosave_goals)
-        self.combo_level.currentTextChanged.connect(self._autosave_goals)
-        self.input_notes.textChanged.connect(self._autosave_goals)
+        for f in self._goal_fields:
+            f.signal.connect(self._autosave_goals)
         self.sessions_table.itemChanged.connect(self._save_sessions_log)
         self.sessions_table.cellDoubleClicked.connect(self._prefill_completed_date)
 
@@ -562,21 +671,13 @@ class TrainingTab(QWidget):
             goals = json.loads(GOALS_PATH.read_text())
         except (json.JSONDecodeError, OSError):
             return
-        self.input_goal.setPlainText(goals.get("main_goal") or "")
-        self.input_event_name.setText(goals.get("event_name") or "")
         if goals.get("event_date"):
             q_date = QDate.fromString(goals["event_date"], "yyyy-MM-dd")
             if q_date.isValid() and q_date > QDate.currentDate():
                 self.input_event_date.setDate(q_date)
-        if goals.get("available_hours_per_week"):
-            self.spin_hours.setValue(int(goals["available_hours_per_week"]))
-        if goals.get("current_ftp_watts"):
-            self.spin_ftp.setValue(int(goals["current_ftp_watts"]))
-        if goals.get("max_hr_bpm"):
-            self.spin_max_hr.setValue(int(goals["max_hr_bpm"]))
-        if goals.get("experience_level"):
-            self.combo_level.setCurrentText(goals["experience_level"])
-        self.input_notes.setPlainText(goals.get("additional_notes") or "")
+        for f in self._goal_fields:
+            if not f.key.startswith("_"):
+                f.write(goals.get(f.key))
 
     def _set_busy(self, busy: bool, message: str):
         self.btn_generate.setEnabled(not busy)

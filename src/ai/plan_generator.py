@@ -4,6 +4,7 @@ from typing import cast
 from anthropic.types import TextBlock
 
 from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL
+from src.goals import GOAL_FIELDS
 from .client import get_client
 
 
@@ -57,24 +58,16 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 def _build_plan_header(goals: dict) -> str:
     """Markdown block recording the parameter values used to generate this plan."""
     rows = []
-    if goals.get("main_goal"):
-        rows.append(("Goal", goals["main_goal"]))
-    if goals.get("event_name"):
-        rows.append(("Event", goals["event_name"]))
-    if goals.get("event_date"):
-        rows.append(("Event date", goals["event_date"]))
-    if goals.get("weeks_until_event"):
-        rows.append(("Weeks to event", goals["weeks_until_event"]))
-    if goals.get("available_hours_per_week"):
-        rows.append(("Hours per week", f"{goals['available_hours_per_week']} h"))
-    if goals.get("current_ftp_watts"):
-        rows.append(("FTP", f"{goals['current_ftp_watts']} W"))
-    if goals.get("max_hr_bpm"):
-        rows.append(("Max HR", f"{goals['max_hr_bpm']} bpm"))
-    if goals.get("experience_level"):
-        rows.append(("Experience", goals["experience_level"]))
-    if goals.get("additional_notes"):
-        rows.append(("Notes", goals["additional_notes"]))
+    for gm in GOAL_FIELDS:
+        v = goals.get(gm.key)
+        if v:
+            rows.append((gm.label, gm.format_value(v)))
+        # insert computed event fields directly after event_name
+        if gm.key == "event_name":
+            if goals.get("event_date"):
+                rows.append(("Event date", goals["event_date"]))
+            if goals.get("weeks_until_event"):
+                rows.append(("Weeks to event", str(goals["weeks_until_event"])))
     if goals.get("current_date"):
         rows.append(("Generated on", goals["current_date"]))
 

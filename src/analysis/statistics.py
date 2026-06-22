@@ -4,6 +4,8 @@ from typing import Optional
 import numpy as np
 from dataclasses import dataclass
 
+from .activity_metrics import representative_dt
+
 # Constants for rolling max windows (in seconds)
 ROLLING_WINDOWS = [10, 60, 600, 1200]
 
@@ -46,11 +48,9 @@ class StatisticsCalculator:
         if len(time_array) == 0 or start_idx < 0 or end_idx > len(time_array) or start_idx >= end_idx:
             return out
         
-        # Calculate sampling rate (dt in seconds per sample)
-        if len(time_array) < 2:
-            dt = 1.0
-        else:
-            dt = time_array[1] - time_array[0]
+        # Robust sampling interval — the median delta, not time[1]-time[0],
+        # which is wrong for non-uniform recordings or rides that open with a gap.
+        dt = representative_dt(time_array)
         
         for metric in ["distance", "power", "heart_rate"]:
             if metric not in activity.available_metrics:

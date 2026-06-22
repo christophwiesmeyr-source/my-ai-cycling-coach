@@ -3,11 +3,15 @@ import json
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
+from src.data.activity import Activity
 from src.ai.tools import (
     _get_activity_details,
+    _get_activity_efficiency,
     _get_activity_power_curve,
+    _get_activity_training_load,
     _get_activity_zones,
     _HR_ZONES,
     _list_activities,
@@ -39,6 +43,37 @@ def _make_activity(power=None, heart_rate=None, n=100):
 
     activity.get_time_series.side_effect = _series
     return activity
+
+
+def _real_activity(n=600, dt=1.0, power=200.0, heart_rate=150.0, cadence=85.0,
+                   speed=8.0, altitude=None, moving=True, sport="Ride",
+                   elapsed=None, moving_time=None):
+    """Build a genuine Activity from constant (or array) streams for tool tests."""
+    cols = {"timestamp": pd.to_datetime(0, unit="s") + pd.to_timedelta(np.arange(n) * dt, unit="s")}
+
+    def _col(val):
+        return np.asarray(val, dtype=float) if not np.isscalar(val) else np.full(n, float(val))
+
+    if power is not None:
+        cols["power"] = _col(power)
+    if heart_rate is not None:
+        cols["heart_rate"] = _col(heart_rate)
+    if cadence is not None:
+        cols["cadence"] = _col(cadence)
+    if speed is not None:
+        cols["speed"] = _col(speed)
+    if altitude is not None:
+        cols["altitude"] = _col(altitude)
+    cols["distance"] = np.cumsum(_col(speed if speed is not None else 8.0)) * dt
+    if moving is not None:
+        cols["moving"] = np.asarray(moving, dtype=bool) if not np.isscalar(moving) else np.full(n, bool(moving))
+
+    return Activity(
+        sport=sport,
+        total_elapsed_time=elapsed if elapsed is not None else (n - 1) * dt,
+        total_moving_time=moving_time,
+        data=pd.DataFrame(cols),
+    )
 
 
 def _make_block(name, **inputs):
@@ -93,6 +128,18 @@ class TestExecuteTools:
     def test_routes_get_activity_zones(self):
         block = _make_block("get_activity_zones", activity_id=1)
         with patch("src.ai.tools._get_activity_zones", return_value="ok") as fn:
+            execute_tools([block], Mock())
+        fn.assert_called_once()
+
+    def test_routes_get_activity_training_load(self):
+        block = _make_block("get_activity_training_load", activity_id=1)
+        with patch("src.ai.tools._get_activity_training_load", return_value="ok") as fn:
+            execute_tools([block], Mock())
+        fn.assert_called_once()
+
+    def test_routes_get_activity_efficiency(self):
+        block = _make_block("get_activity_efficiency", activity_id=1)
+        with patch("src.ai.tools._get_activity_efficiency", return_value="ok") as fn:
             execute_tools([block], Mock())
         fn.assert_called_once()
 
@@ -177,35 +224,43 @@ class TestListActivities:
 # ---------------------------------------------------------------------------
 
 class TestGetActivityDetails:
-    def test_success_formats_stats(self):
+    def test_success_formats_sections(self):
         client = Mock()
-        activity = MagicMock()
-        client.download_activity.return_value = activity
-        fake_stats = {"Avg Power": (200.5, "W"), "Avg HR": (145, "bpm")}
-
-        with patch("src.ai.tools.StatisticsCalculator.calculate_specific_stats", return_value=fake_stats):
-            result = _get_activity_details(client, 42)
-
+        client.download_activity.return_value = _real_activity(
+            n=600, power=200.0, heart_rate=150.0, moving_time=590
+        )
+        result = _get_activity_details(client, 42)
         assert "Activity 42 details:" in result
-        assert "Avg Power: 200.5 W" in result
-        assert "Avg HR: 145 bpm" in result
+        assert "Sport: Ride" in result
+        assert "Time:" in result
+        assert "Elapsed:" in result
+        assert "Moving:" in result
+        assert "Max power: 200 W" in result
 
-    def test_skips_distance_start_and_end(self):
+    def test_dual_averages_when_moving_stream_present(self):
         client = Mock()
-        activity = MagicMock()
-        client.download_activity.return_value = activity
-        fake_stats = {
-            "Distance Start": (0.0, "km"),
-            "Distance End": (50.0, "km"),
-            "Avg Power": (200.0, "W"),
-        }
+        client.download_activity.return_value = _real_activity(n=300, power=180.0)
+        result = _get_activity_details(client, 42)
+        assert "Averages (moving | full):" in result
+        # constant 180 W → both columns equal
+        assert "Power: 180 | 180 W" in result
 
-        with patch("src.ai.tools.StatisticsCalculator.calculate_specific_stats", return_value=fake_stats):
-            result = _get_activity_details(client, 42)
+    def test_single_average_when_no_moving_stream(self):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, power=180.0, moving=None)
+        result = _get_activity_details(client, 42)
+        assert "Averages:" in result
+        assert "no moving stream" in result
 
-        assert "Distance Start" not in result
-        assert "Distance End" not in result
-        assert "Avg Power" in result
+    def test_elevation_reported_when_altitude_present(self):
+        # climb 0→100 m then descend back to 0
+        alt = np.concatenate([np.linspace(0, 100, 150), np.linspace(100, 0, 150)])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, altitude=alt)
+        result = _get_activity_details(client, 42)
+        assert "Elevation:" in result
+        assert "Ascent:" in result
+        assert "Descent:" in result
 
     def test_download_error_returns_error_message(self):
         client = Mock()
@@ -240,6 +295,95 @@ class TestGetActivityPowerCurve:
         client.download_activity.side_effect = Exception("timeout")
         result = _get_activity_power_curve(client, 42)
         assert "Failed to download activity 42" in result
+
+
+# ---------------------------------------------------------------------------
+# _get_activity_training_load
+# ---------------------------------------------------------------------------
+
+class TestGetActivityTrainingLoad:
+    def test_no_power_returns_message(self, tmp_path):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=100, power=None)
+        with patch("src.ai.tools.GOALS_PATH", tmp_path / "goals.json"):
+            result = _get_activity_training_load(client, 42)
+        assert "needs power" in result
+
+    def test_core_metrics_without_goals(self, tmp_path):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=200.0)
+        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+            result = _get_activity_training_load(client, 42)
+        assert "Normalized Power: 200 W" in result  # constant power → NP == avg
+        assert "Variability Index: 1.00" in result
+        assert "Work:" in result
+        assert "kcal (rough estimate)" in result
+        assert "set FTP in Training Goals" in result
+
+    def test_ftp_enables_if_and_tss(self, tmp_path):
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=3600, power=250.0)
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_training_load(client, 42)
+        assert "Intensity Factor: 1.00 (FTP 250 W)" in result
+        # 1 h at FTP → ~100 TSS
+        assert "TSS: 100" in result
+
+    def test_weight_enables_power_to_weight(self, tmp_path):
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"weight_kg": 70}))
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=210.0)
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_training_load(client, 42)
+        assert "3.00 W/kg" in result
+
+    def test_efficiency_factor_with_hr(self, tmp_path):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=200.0, heart_rate=160.0)
+        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+            result = _get_activity_training_load(client, 42)
+        assert "Efficiency Factor: 1.25 W/beat" in result
+
+    def test_download_error_returns_error(self):
+        client = Mock()
+        client.download_activity.side_effect = Exception("timeout")
+        assert "Failed to download activity 42" in _get_activity_training_load(client, 42)
+
+
+# ---------------------------------------------------------------------------
+# _get_activity_efficiency
+# ---------------------------------------------------------------------------
+
+class TestGetActivityEfficiency:
+    def test_decoupling_and_splits_present(self):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=200.0, heart_rate=150.0)
+        result = _get_activity_efficiency(client, 42)
+        assert "Aerobic decoupling (Pw:Hr):" in result
+        assert "Splits (first half | second half):" in result
+        assert "Power: 200 W | 200 W" in result
+
+    def test_positive_decoupling_when_hr_drifts_up(self):
+        # power steady, HR rises in second half → power:HR ratio falls → positive drift
+        hr = np.concatenate([np.full(300, 140.0), np.full(300, 160.0)])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=200.0, heart_rate=hr)
+        result = _get_activity_efficiency(client, 42)
+        assert "+" in result.split("Pw:Hr):")[1].split("%")[0]
+
+    def test_missing_hr_notes_requirement(self):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=200.0, heart_rate=None)
+        result = _get_activity_efficiency(client, 42)
+        assert "needs both power and heart rate" in result
+
+    def test_download_error_returns_error(self):
+        client = Mock()
+        client.download_activity.side_effect = Exception("timeout")
+        assert "Failed to download activity 42" in _get_activity_efficiency(client, 42)
 
 
 # ---------------------------------------------------------------------------

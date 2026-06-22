@@ -13,6 +13,7 @@ class Activity:
     start_time: Optional[str] = None
     total_distance: Optional[float] = None
     total_elapsed_time: Optional[float] = None
+    total_moving_time: Optional[float] = None
     
     # Time-series data stored as pandas DataFrame
     # Columns: timestamp, power, heart_rate, cadence, speed, distance, altitude
@@ -92,5 +93,6 @@ class Activity:
     @property
     def available_metrics(self) -> list[str]:
         """Get list of available data metrics"""
-        exclude = {'timestamp'}
+        # 'moving' is Strava's boolean flag, not a plottable measurement.
+        exclude = {'timestamp', 'moving'}
         return [col for col in self.data.columns if col not in exclude]

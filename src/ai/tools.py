@@ -5,7 +5,17 @@ import json
 import numpy as np
 
 from src.constants import STRAVA_HISTORY_WEEKS, GOALS_PATH
-from src.analysis.statistics import rolling_max, StatisticsCalculator
+from src.analysis.statistics import rolling_max
+from src.analysis.activity_metrics import (
+    elevation_changes,
+    moving_mask,
+    normalized_power,
+    representative_dt,
+    sample_weights,
+    time_summary,
+    total_work_kj,
+    weighted_average,
+)
 
 TOOLS = [
     {
@@ -64,6 +74,46 @@ TOOLS = [
         },
     },
     {
+        "name": "get_activity_training_load",
+        "description": (
+            "Compute training-load and work metrics for a specific activity: Normalized "
+            "Power, Intensity Factor, Training Stress Score (TSS), Variability Index, total "
+            "work (kJ), a rough calorie estimate, Efficiency Factor (NP per heartbeat), and "
+            "power-to-weight (W/kg). FTP, max HR, and weight are loaded automatically from "
+            "stored goals; metrics needing a missing value are reported as unavailable. Use "
+            "this to quantify how hard and how taxing a session was."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "description": "The Strava activity ID.",
+                }
+            },
+            "required": ["activity_id"],
+        },
+    },
+    {
+        "name": "get_activity_efficiency",
+        "description": (
+            "Assess pacing and aerobic durability for a specific activity: aerobic "
+            "decoupling (Pw:Hr drift between the first and second half of moving time) and "
+            "first-half vs second-half power and speed splits. Use this to judge whether the "
+            "athlete faded, paced evenly, or negative-split the effort."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "description": "The Strava activity ID.",
+                }
+            },
+            "required": ["activity_id"],
+        },
+    },
+    {
         "name": "get_activity_zones",
         "description": (
             "Break down a specific activity by time spent in each power zone (Z1–Z6, "
@@ -89,6 +139,8 @@ TOOL_STATUS_MESSAGES = {
     "list_recent_activities": "Fetching your recent Strava activities…",
     "get_activity_details": "Loading activity details from Strava…",
     "get_activity_power_curve": "Computing power curve…",
+    "get_activity_training_load": "Computing training load…",
+    "get_activity_efficiency": "Analysing pacing and efficiency…",
     "get_activity_zones": "Analysing training zones…",
 }
 
@@ -138,6 +190,10 @@ def _execute_tool(block, strava_client) -> str:
         return _get_activity_details(strava_client, int(block.input["activity_id"]))
     if block.name == "get_activity_power_curve":
         return _get_activity_power_curve(strava_client, int(block.input["activity_id"]))
+    if block.name == "get_activity_training_load":
+        return _get_activity_training_load(strava_client, int(block.input["activity_id"]))
+    if block.name == "get_activity_efficiency":
+        return _get_activity_efficiency(strava_client, int(block.input["activity_id"]))
     if block.name == "get_activity_zones":
         return _get_activity_zones(strava_client, int(block.input["activity_id"]))
     return f"Unknown tool: {block.name}"
@@ -169,22 +225,109 @@ def _list_activities(strava_client, weeks: int) -> str:
     return "\n".join(lines)
 
 
+def _fmt_duration(seconds: float) -> str:
+    """Format a duration as H?h MM m SS s, dropping the hour part when zero."""
+    secs = int(round(seconds))
+    h, rem = divmod(secs, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h{m:02d}m{s:02d}s" if h > 0 else f"{m}m{s:02d}s"
+
+
+def _load_goals() -> dict:
+    """Load stored training goals (FTP, max HR, weight). Empty dict on failure."""
+    try:
+        return json.loads(GOALS_PATH.read_text())
+    except Exception:
+        return {}
+
+
+# Speed (m/s) below which a pedaling sample is treated as coasting.
+_COASTING_CADENCE_RPM = 3
+
+
 def _get_activity_details(strava_client, activity_id: int) -> str:
     try:
         activity = strava_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
-    n = len(activity.data)
-    stats = StatisticsCalculator.calculate_specific_stats(activity, 0, n)
+    time_array = activity.get_time_array()
+    mask = moving_mask(activity)
+    times = time_summary(activity)
 
-    skip = {"Distance Start", "Distance End"}
     lines = [f"Activity {activity_id} details:"]
-    for key, (value, unit) in stats.items():
-        if key in skip:
-            continue
-        formatted = f"{value:.1f}" if isinstance(value, float) else str(value)
-        lines.append(f"  {key}: {formatted} {unit}".rstrip())
+    lines.append(f"Sport: {activity.sport}")
+
+    distance = activity.get_time_series("distance")
+    if distance is not None and len(distance) > 0:
+        lines.append(f"Distance: {float(distance[-1]) / 1000:.1f} km")
+
+    # Time accounting
+    lines.append("Time:")
+    lines.append(f"  Elapsed: {_fmt_duration(times['elapsed_s'])}")
+    if "moving_s" in times:
+        stops = times.get("stops")
+        stop_note = f" ({stops} stop{'s' if stops != 1 else ''})" if stops else ""
+        lines.append(f"  Moving: {_fmt_duration(times['moving_s'])}")
+        lines.append(f"  Stopped: {_fmt_duration(times['stopped_s'])}{stop_note}")
+    else:
+        lines.append("  Moving: unavailable (no moving stream from Strava)")
+
+    # Elevation
+    ascent, descent = elevation_changes(activity.get_time_series("altitude"), time_array)
+    if ascent or descent:
+        lines.append("Elevation:")
+        lines.append(f"  Ascent: {ascent:.0f} m")
+        lines.append(f"  Descent: {descent:.0f} m")
+
+    # Averages: moving vs full where a moving mask is available
+    dual = mask is not None
+    header = "Averages (moving | full):" if dual else "Averages:"
+    avg_lines = []
+
+    def _avg_line(label, series, unit, scale=1.0, fmt="{:.0f}"):
+        full = weighted_average(series, time_array)
+        if full is None:
+            return
+        if dual:
+            mv = weighted_average(series, time_array, mask)
+            mv_str = fmt.format(mv * scale) if mv is not None else "—"
+            avg_lines.append(f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}".rstrip())
+        else:
+            avg_lines.append(f"  {label}: {fmt.format(full * scale)} {unit}".rstrip())
+
+    _avg_line("Power", activity.get_time_series("power"), "W")
+    _avg_line("Heart rate", activity.get_time_series("heart_rate"), "bpm")
+    _avg_line("Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}")
+    _avg_line("Cadence", activity.get_time_series("cadence"), "rpm")
+
+    if avg_lines:
+        lines.append(header)
+        lines += avg_lines
+
+    # Coasting share of moving time (cadence ~ 0 while moving)
+    cadence = activity.get_time_series("cadence")
+    if mask is not None and cadence is not None and len(cadence) > 0:
+        c = np.asarray(cadence, dtype=float)
+        w = sample_weights(time_array)
+        n = min(len(c), len(w), len(mask))
+        moving_w = w[:n] * mask[:n]
+        moving_total = float(np.sum(moving_w))
+        if moving_total > 0:
+            coasting = float(np.sum(moving_w * (c[:n] < _COASTING_CADENCE_RPM)))
+            lines.append(f"  Coasting: {100 * coasting / moving_total:.0f}% of moving time")
+
+    # Peaks
+    power = activity.get_time_series("power")
+    hr = activity.get_time_series("heart_rate")
+    peaks = []
+    if power is not None and len(power) > 0 and not np.all(np.isnan(power)):
+        peaks.append(f"  Max power: {np.nanmax(power):.0f} W")
+    if hr is not None and len(hr) > 0 and not np.all(np.isnan(hr)):
+        peaks.append(f"  Max HR: {np.nanmax(hr):.0f} bpm")
+    if peaks:
+        lines.append("Peaks:")
+        lines += peaks
 
     return "\n".join(lines)
 
@@ -200,7 +343,7 @@ def _get_activity_power_curve(strava_client, activity_id: int) -> str:
         return f"No power data available for activity {activity_id}."
 
     time_array = activity.get_time_array()
-    dt = float(time_array[1] - time_array[0]) if len(time_array) > 1 else 1.0
+    dt = representative_dt(time_array)
 
     lines = [f"Activity {activity_id} power curve:"]
     for secs in _POWER_CURVE_WINDOWS:
@@ -208,6 +351,126 @@ def _get_activity_power_curve(strava_client, activity_id: int) -> str:
         best = rolling_max(power, window_samples)
         if best > 0:
             lines.append(f"  {_POWER_CURVE_LABELS[secs]}: {best:.0f} W")
+
+    return "\n".join(lines)
+
+
+def _get_activity_training_load(strava_client, activity_id: int) -> str:
+    try:
+        activity = strava_client.download_activity(activity_id)
+    except Exception as exc:
+        return f"Failed to download activity {activity_id}: {exc}"
+
+    power = activity.get_time_series("power")
+    if power is None or len(power) == 0:
+        return f"No power data available for activity {activity_id}; training load needs power."
+
+    time_array = activity.get_time_array()
+    mask = moving_mask(activity)
+    times = time_summary(activity)
+    goals = _load_goals()
+    ftp = int(goals.get("current_ftp_watts") or 0)
+    weight = float(goals.get("weight_kg") or 0)
+
+    np_watts = normalized_power(power, time_array)
+    avg_power = weighted_average(power, time_array, mask)
+    work_kj = total_work_kj(power, time_array)
+
+    lines = [f"Activity {activity_id} training load:"]
+
+    if np_watts is not None:
+        lines.append(f"  Normalized Power: {np_watts:.0f} W")
+    if np_watts is not None and avg_power and avg_power > 0:
+        lines.append(f"  Variability Index: {np_watts / avg_power:.2f}")
+
+    if np_watts is not None and ftp:
+        intensity = np_watts / ftp
+        lines.append(f"  Intensity Factor: {intensity:.2f} (FTP {ftp} W)")
+        duration_s = times.get("moving_s", times["elapsed_s"])
+        tss = duration_s * np_watts * intensity / (ftp * 3600) * 100
+        lines.append(f"  TSS: {tss:.0f}")
+    else:
+        lines.append("  Intensity Factor / TSS: set FTP in Training Goals.")
+
+    if work_kj is not None:
+        lines.append(f"  Work: {work_kj:.0f} kJ")
+        # For cycling, kJ ≈ kcal (the ~24% human efficiency and the J→cal
+        # factor roughly cancel), so the work figure doubles as a rough estimate.
+        lines.append(f"  Calories: ~{work_kj:.0f} kcal (rough estimate)")
+
+    avg_hr = weighted_average(activity.get_time_series("heart_rate"), time_array, mask)
+    if np_watts is not None and avg_hr and avg_hr > 0:
+        lines.append(f"  Efficiency Factor: {np_watts / avg_hr:.2f} W/beat")
+
+    if avg_power is not None and weight:
+        lines.append(f"  Avg power-to-weight: {avg_power / weight:.2f} W/kg (weight {weight:.0f} kg)")
+    elif avg_power is not None:
+        lines.append("  Power-to-weight: set weight in Training Goals.")
+
+    return "\n".join(lines)
+
+
+def _moving_halves(time_array, mask):
+    """Boolean masks splitting the moving (or, absent a mask, full) duration in half."""
+    w = sample_weights(time_array)
+    n = len(w)
+    active = np.asarray(mask, dtype=bool)[:n] if mask is not None else np.ones(n, dtype=bool)
+    aw = w * active
+    total = float(np.sum(aw))
+    if total <= 0:
+        return None, None
+    cum = np.cumsum(aw)
+    half = total / 2
+    return active & (cum <= half), active & (cum > half)
+
+
+def _get_activity_efficiency(strava_client, activity_id: int) -> str:
+    try:
+        activity = strava_client.download_activity(activity_id)
+    except Exception as exc:
+        return f"Failed to download activity {activity_id}: {exc}"
+
+    time_array = activity.get_time_array()
+    mask = moving_mask(activity)
+    h1, h2 = _moving_halves(time_array, mask)
+    if h1 is None:
+        return f"Activity {activity_id}: not enough data to split into halves."
+
+    power = activity.get_time_series("power")
+    hr = activity.get_time_series("heart_rate")
+    speed = activity.get_time_series("speed")
+
+    lines = [f"Activity {activity_id} efficiency:"]
+
+    # Aerobic decoupling (Pw:Hr drift)
+    if power is not None and len(power) > 0 and hr is not None and len(hr) > 0:
+        p1 = weighted_average(power, time_array, h1)
+        p2 = weighted_average(power, time_array, h2)
+        hr1 = weighted_average(hr, time_array, h1)
+        hr2 = weighted_average(hr, time_array, h2)
+        if all(v is not None and v > 0 for v in (p1, p2, hr1, hr2)):
+            r1, r2 = p1 / hr1, p2 / hr2
+            drift = (r1 - r2) / r1 * 100
+            lines.append(
+                f"  Aerobic decoupling (Pw:Hr): {drift:+.1f}% "
+                f"(first half {r1:.2f} → second half {r2:.2f} W/bpm)"
+            )
+    else:
+        lines.append("  Aerobic decoupling: needs both power and heart rate.")
+
+    # First/second-half splits
+    split_lines = []
+    p1 = weighted_average(power, time_array, h1)
+    p2 = weighted_average(power, time_array, h2)
+    if p1 is not None and p2 is not None:
+        split_lines.append(f"    Power: {p1:.0f} W | {p2:.0f} W")
+    s1 = weighted_average(speed, time_array, h1)
+    s2 = weighted_average(speed, time_array, h2)
+    if s1 is not None and s2 is not None:
+        split_lines.append(f"    Speed: {s1 * 3.6:.1f} km/h | {s2 * 3.6:.1f} km/h")
+    if split_lines:
+        lines.append("  Splits (first half | second half):")
+        lines += split_lines
 
     return "\n".join(lines)
 
@@ -250,7 +513,7 @@ def _get_activity_zones(strava_client, activity_id: int) -> str:
         return f"Failed to download activity {activity_id}: {exc}"
 
     time_array = activity.get_time_array()
-    dt = float(time_array[1] - time_array[0]) if len(time_array) > 1 else 1.0
+    dt = representative_dt(time_array)
 
     lines = [f"Activity {activity_id} zones:"]
 

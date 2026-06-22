@@ -19,7 +19,7 @@ class StravaClient:
 
     TOKEN_FILE = STRAVA_TOKENS_PATH
     BASE_URL = 'https://www.strava.com/api/v3'
-    STREAM_KEYS = 'time,altitude,heartrate,cadence,watts,velocity_smooth,distance'
+    STREAM_KEYS = 'time,altitude,heartrate,cadence,watts,velocity_smooth,distance,moving'
 
     def __init__(self, access_token: Optional[str] = None):
         self.tokens = self._load_tokens()
@@ -183,6 +183,7 @@ class StravaClient:
             'cadence': 'cadence',
             'watts': 'power',
             'velocity_smooth': 'speed',
+            'moving': 'moving',
         }
 
         for stream_key, column_name in field_mapping.items():
@@ -195,6 +196,7 @@ class StravaClient:
             start_time=start_time,
             total_distance=metadata.get('distance'),
             total_elapsed_time=metadata.get('elapsed_time'),
+            total_moving_time=metadata.get('moving_time'),
             data=pd.DataFrame(data),
         )
 

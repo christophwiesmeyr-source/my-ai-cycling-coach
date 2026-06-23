@@ -252,6 +252,21 @@ class TestGetActivityDetails:
         assert "Averages:" in result
         assert "no moving stream" in result
 
+    def test_pedalling_power_excludes_coasting(self):
+        # First half pedalling at 200 W, second half coasting (0 W, cadence 0)
+        power = np.concatenate([np.full(300, 200.0), np.full(300, 0.0)])
+        cadence = np.concatenate([np.full(300, 85.0), np.full(300, 0.0)])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=600, power=power, cadence=cadence, heart_rate=None
+        )
+        result = _get_activity_details(client, 42)
+        assert "Pedalling:" in result
+        # moving avg is ~100 W (half coasting); pedalling-only is ~200 W
+        assert "Power (pedalling): 200 W" in result
+        assert "Power: 100 | 100 W" in result
+        assert "Coasting: 50% of moving time" in result
+
     def test_elevation_reported_when_altitude_present(self):
         # climb 0→100 m then descend back to 0
         alt = np.concatenate([np.linspace(0, 100, 150), np.linspace(100, 0, 150)])

@@ -8,6 +8,7 @@ from src.analysis.activity_metrics import (
     elevation_changes,
     moving_mask,
     normalized_power,
+    pedaling_mask,
     representative_dt,
     sample_weights,
     time_summary,
@@ -100,6 +101,30 @@ class TestTimeSummary:
         moving = np.array([True] * 10 + [False] * 5 + [True] * 10 + [False] * 5 + [True] * 10)
         act = _activity({"moving": moving})
         assert time_summary(act)["stops"] == 2
+
+
+# ---------------------------------------------------------------------------
+# pedaling_mask
+# ---------------------------------------------------------------------------
+
+class TestPedalingMask:
+    def test_uses_cadence_when_present(self):
+        cadence = np.array([80.0] * 50 + [0.0] * 50)
+        act = _activity({"cadence": cadence, "power": np.full(100, 200.0)})
+        mask = pedaling_mask(act)
+        assert mask[:50].all()
+        assert not mask[50:].any()
+
+    def test_falls_back_to_power_without_cadence(self):
+        power = np.array([200.0] * 60 + [0.0] * 40)
+        act = _activity({"power": power})
+        mask = pedaling_mask(act)
+        assert mask[:60].all()
+        assert not mask[60:].any()
+
+    def test_none_when_neither_stream(self):
+        act = _activity({"heart_rate": np.full(50, 140.0)})
+        assert pedaling_mask(act) is None
 
 
 # ---------------------------------------------------------------------------

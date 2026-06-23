@@ -73,6 +73,26 @@ def moving_mask(activity) -> Optional[np.ndarray]:
     return np.asarray(series).astype(bool)
 
 
+# At or above this cadence the rider is considered to be pedalling (below it,
+# coasting). Used for both the coasting share and pedalling-only power.
+PEDALING_CADENCE_RPM = 3
+
+
+def pedaling_mask(activity, cadence_threshold: float = PEDALING_CADENCE_RPM) -> Optional[np.ndarray]:
+    """Per-sample mask of samples where the rider is pedalling.
+
+    Prefers cadence (>= threshold); falls back to positive power when there is no
+    cadence stream. Returns None if neither stream is available.
+    """
+    cadence = activity.get_time_series("cadence")
+    if cadence is not None and len(cadence) > 0:
+        return np.nan_to_num(np.asarray(cadence, dtype=float), nan=0.0) >= cadence_threshold
+    power = activity.get_time_series("power")
+    if power is not None and len(power) > 0:
+        return np.nan_to_num(np.asarray(power, dtype=float), nan=0.0) > 0
+    return None
+
+
 def _count_stops(mask: np.ndarray) -> int:
     """Number of contiguous non-moving runs in a moving mask."""
     if mask is None or len(mask) == 0:

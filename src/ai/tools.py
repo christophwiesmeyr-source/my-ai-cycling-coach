@@ -10,6 +10,7 @@ from src.analysis.activity_metrics import (
     elevation_changes,
     moving_mask,
     normalized_power,
+    pedaling_mask,
     representative_dt,
     sample_weights,
     time_summary,
@@ -241,10 +242,6 @@ def _load_goals() -> dict:
         return {}
 
 
-# Speed (m/s) below which a pedaling sample is treated as coasting.
-_COASTING_CADENCE_RPM = 3
-
-
 def _get_activity_details(strava_client, activity_id: int) -> str:
     try:
         activity = strava_client.download_activity(activity_id)
@@ -305,20 +302,33 @@ def _get_activity_details(strava_client, activity_id: int) -> str:
         lines.append(header)
         lines += avg_lines
 
-    # Coasting share of moving time (cadence ~ 0 while moving)
-    cadence = activity.get_time_series("cadence")
-    if mask is not None and cadence is not None and len(cadence) > 0:
-        c = np.asarray(cadence, dtype=float)
-        w = sample_weights(time_array)
-        n = min(len(c), len(w), len(mask))
-        moving_w = w[:n] * mask[:n]
-        moving_total = float(np.sum(moving_w))
-        if moving_total > 0:
-            coasting = float(np.sum(moving_w * (c[:n] < _COASTING_CADENCE_RPM)))
-            lines.append(f"  Coasting: {100 * coasting / moving_total:.0f}% of moving time")
+    # Pedalling: power while actually driving the pedals (excludes coasting),
+    # plus the coasting share — far more telling than average power on hilly rides.
+    power = activity.get_time_series("power")
+    pedaling = pedaling_mask(activity)
+    if pedaling is not None:
+        active = mask if mask is not None else np.ones(len(time_array), dtype=bool)
+        n = min(len(pedaling), len(active))
+        ped_active = pedaling[:n] & active[:n]
+        ped_lines = []
+
+        ped_power = weighted_average(power, time_array, ped_active)
+        if ped_power is not None:
+            ped_lines.append(f"  Power (pedalling): {ped_power:.0f} W")
+
+        w = sample_weights(time_array)[:n]
+        active_total = float(np.sum(w * active[:n]))
+        if active_total > 0:
+            coasting = float(np.sum(w * (active[:n] & ~pedaling[:n])))
+            of = "moving time" if mask is not None else "activity"
+            ped_lines.append(f"  Coasting: {100 * coasting / active_total:.0f}% of {of}")
+
+        if ped_lines:
+            lines.append("Pedalling:")
+            lines += ped_lines
 
     # Peaks
-    power = activity.get_time_series("power")
+    hr = activity.get_time_series("heart_rate")
     hr = activity.get_time_series("heart_rate")
     peaks = []
     if power is not None and len(power) > 0 and not np.all(np.isnan(power)):

@@ -5,17 +5,17 @@
     {
       "start_s": 1787.1,
       "end_s": 3028.6,
-      "type": "other"
+      "type": "sweet_spot"
     },
     {
       "start_s": 3215.5,
       "end_s": 3362.2,
-      "type": "other"
+      "type": "sweet_spot"
     },
     {
-      "start_s": 11169.9,
+      "start_s": 10708.7,
       "end_s": 11845.2,
-      "type": "other"
+      "type": "sweet_spot"
     }
   ]
 }

@@ -13,6 +13,9 @@ dependencies = ["numpy"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+# Tooling for the test bench / evaluation scripts only — NOT needed to use the
+# detector. matplotlib is imported lazily in bench/evaluate.py.
+bench = ["pytest", "matplotlib"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

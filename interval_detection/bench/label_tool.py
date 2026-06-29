@@ -60,6 +60,7 @@ class Labeler(QtWidgets.QMainWindow):
         self.plot.setLabel("left", "power", units="W")
         self.curve = self.plot.plot(pen=pg.mkPen((80, 80, 200)))
 
+        self.annot_label = QtWidgets.QLabel("")  # green Annotated / red Not Annotated
         self.meta_label = QtWidgets.QLabel("")
         self.smooth_check = QtWidgets.QCheckBox(f"Smooth ({int(SMOOTH_WINDOW_S)} s)")
         self.smooth_check.toggled.connect(self._redraw_curve)
@@ -74,6 +75,7 @@ class Labeler(QtWidgets.QMainWindow):
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
 
         side = QtWidgets.QVBoxLayout()
+        side.addWidget(self.annot_label)
         side.addWidget(self.meta_label)
         side.addWidget(self.smooth_check)
         for label, slot in [("Add (A)", self.add_region),
@@ -126,9 +128,17 @@ class Labeler(QtWidgets.QMainWindow):
         for s, e, itype in (ann["intervals"] or []):
             self._make_region(s, e, itype)
         place = "indoor" if ann["indoor"] else "outdoor"
-        labelled = "unlabelled" if ann["intervals"] is None else f"{len(self.regions)} intervals"
-        self.meta_label.setText(f"{ann['sport_type'] or '?'} · {place} · {labelled}")
+        self.meta_label.setText(f"{ann['sport_type'] or '?'} · {place}")
+        self._update_annot_label()
         self.refresh_list()
+
+    def _update_annot_label(self):
+        if self._loaded_labeled:
+            self.annot_label.setText("Annotated")
+            self.annot_label.setStyleSheet("color: green; font-weight: bold; font-size: 14pt;")
+        else:
+            self.annot_label.setText("Not Annotated")
+            self.annot_label.setStyleSheet("color: red; font-weight: bold; font-size: 14pt;")
 
     def _redraw_curve(self):
         """Redraw the power trace, smoothed or raw, without touching intervals."""

@@ -1,5 +1,21 @@
 {
   "indoor": true,
   "sport_type": "VirtualRide",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 602.1,
+      "end_s": 780.8,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 958.2,
+      "end_s": 1142.5,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 1320.0,
+      "end_s": 1500.8,
+      "type": "vo2max"
+    }
+  ]
 }

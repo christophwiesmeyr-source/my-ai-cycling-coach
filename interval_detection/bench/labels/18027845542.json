@@ -1,5 +1,16 @@
 {
   "indoor": false,
   "sport_type": "Ride",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 1080.7,
+      "end_s": 2283.0,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 3535.2,
+      "end_s": 4732.2,
+      "type": "sweet_spot"
+    }
+  ]
 }

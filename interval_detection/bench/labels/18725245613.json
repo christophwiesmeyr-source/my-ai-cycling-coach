@@ -1,5 +1,16 @@
 {
   "indoor": false,
   "sport_type": "GravelRide",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 1110.6,
+      "end_s": 2308.0,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 3640.6,
+      "end_s": 4841.7,
+      "type": "sweet_spot"
+    }
+  ]
 }

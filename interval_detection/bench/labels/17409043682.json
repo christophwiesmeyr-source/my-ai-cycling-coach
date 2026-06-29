@@ -1,5 +1,46 @@
 {
   "indoor": true,
   "sport_type": "Ride",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 302.0,
+      "end_s": 311.9,
+      "type": "anaerobic"
+    },
+    {
+      "start_s": 612.8,
+      "end_s": 620.0,
+      "type": "anaerobic"
+    },
+    {
+      "start_s": 923.4,
+      "end_s": 1097.8,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 1223.1,
+      "end_s": 1401.6,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 1522.6,
+      "end_s": 1701.5,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 1820.7,
+      "end_s": 2002.4,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 2121.1,
+      "end_s": 2300.0,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 2423.4,
+      "end_s": 2602.3,
+      "type": "sweet_spot"
+    }
+  ]
 }

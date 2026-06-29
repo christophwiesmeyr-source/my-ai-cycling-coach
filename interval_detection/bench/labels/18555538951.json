@@ -1,5 +1,31 @@
 {
   "indoor": false,
   "sport_type": "Ride",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 2006.1,
+      "end_s": 2908.2,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 3429.9,
+      "end_s": 4287.7,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 5185.3,
+      "end_s": 6084.5,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 7305.2,
+      "end_s": 7488.5,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 7937.6,
+      "end_s": 8120.9,
+      "type": "vo2max"
+    }
+  ]
 }

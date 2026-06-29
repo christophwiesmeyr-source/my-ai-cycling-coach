@@ -1,5 +1,36 @@
 {
   "indoor": true,
   "sport_type": "VirtualRide",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 600.7,
+      "end_s": 779.6,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 960.8,
+      "end_s": 1141.5,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 1322.7,
+      "end_s": 1499.3,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 1683.0,
+      "end_s": 1860.1,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 2043.4,
+      "end_s": 2219.9,
+      "type": "vo2max"
+    },
+    {
+      "start_s": 2401.5,
+      "end_s": 2581.0,
+      "type": "vo2max"
+    }
+  ]
 }

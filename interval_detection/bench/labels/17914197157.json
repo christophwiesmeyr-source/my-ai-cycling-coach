@@ -1,5 +1,41 @@
 {
   "indoor": true,
   "sport_type": "Ride",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 352.0,
+      "end_s": 529.4,
+      "type": "threshold"
+    },
+    {
+      "start_s": 712.8,
+      "end_s": 888.6,
+      "type": "threshold"
+    },
+    {
+      "start_s": 1074.8,
+      "end_s": 1251.0,
+      "type": "threshold"
+    },
+    {
+      "start_s": 1430.0,
+      "end_s": 1608.8,
+      "type": "threshold"
+    },
+    {
+      "start_s": 1805.9,
+      "end_s": 1969.2,
+      "type": "threshold"
+    },
+    {
+      "start_s": 2154.9,
+      "end_s": 2327.0,
+      "type": "threshold"
+    },
+    {
+      "start_s": 2509.8,
+      "end_s": 2690.4,
+      "type": "threshold"
+    }
+  ]
 }

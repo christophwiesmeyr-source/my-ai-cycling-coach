@@ -1,5 +1,26 @@
 {
   "indoor": true,
   "sport_type": "VirtualRide",
-  "intervals": null
+  "intervals": [
+    {
+      "start_s": 905.5,
+      "end_s": 1200.0,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 1514.0,
+      "end_s": 1809.3,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 2121.5,
+      "end_s": 2416.1,
+      "type": "sweet_spot"
+    },
+    {
+      "start_s": 2719.1,
+      "end_s": 3015.2,
+      "type": "sweet_spot"
+    }
+  ]
 }

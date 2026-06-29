@@ -16,11 +16,34 @@ Controls:
 import sys
 from pathlib import Path
 
+import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import labelio  # noqa: E402
+
+SMOOTH_WINDOW_S = 20.0
+
+
+def smooth(t, p, window_s=SMOOTH_WINDOW_S):
+    """Centred, edge-safe moving average for display only.
+
+    Self-contained (no app dependency) and replicate-padded so interval
+    boundaries are neither shifted nor dragged down at the ends of the ride.
+    """
+    if len(p) < 2:
+        return p
+    dt = float(np.median(np.diff(t)))
+    if dt <= 0:
+        return p
+    window = int(round(window_s / dt))
+    if window < 2:
+        return p
+    pad = window // 2
+    padded = np.pad(np.asarray(p, dtype=float), pad, mode="edge")
+    averaged = np.convolve(padded, np.ones(window) / window, mode="same")
+    return averaged[pad:pad + len(p)]
 
 
 class Labeler(QtWidgets.QMainWindow):
@@ -38,6 +61,8 @@ class Labeler(QtWidgets.QMainWindow):
         self.curve = self.plot.plot(pen=pg.mkPen((80, 80, 200)))
 
         self.meta_label = QtWidgets.QLabel("")
+        self.smooth_check = QtWidgets.QCheckBox(f"Smooth ({int(SMOOTH_WINDOW_S)} s)")
+        self.smooth_check.toggled.connect(self._redraw_curve)
         self.listw = QtWidgets.QListWidget()
         self.listw.setMaximumWidth(240)
         self.listw.currentRowChanged.connect(self._sync_type_combo)
@@ -50,6 +75,7 @@ class Labeler(QtWidgets.QMainWindow):
 
         side = QtWidgets.QVBoxLayout()
         side.addWidget(self.meta_label)
+        side.addWidget(self.smooth_check)
         for label, slot in [("Add (A)", self.add_region),
                             ("Remove (Del)", self.remove_selected),
                             ("Save (Ctrl+S)", self.save)]:
@@ -91,8 +117,8 @@ class Labeler(QtWidgets.QMainWindow):
         for r in self.regions:
             self.plot.removeItem(r)
         self.regions = []
-        t, p = labelio.load_activity_csv(self.current_id)
-        self.curve.setData(t, p)
+        self._t, self._p = labelio.load_activity_csv(self.current_id)
+        self._redraw_curve()
         self.plot.autoRange()
         ann = labelio.load_annotation(self.current_id)
         self._loaded_labeled = ann["intervals"] is not None
@@ -103,6 +129,11 @@ class Labeler(QtWidgets.QMainWindow):
         labelled = "unlabelled" if ann["intervals"] is None else f"{len(self.regions)} intervals"
         self.meta_label.setText(f"{ann['sport_type'] or '?'} · {place} · {labelled}")
         self.refresh_list()
+
+    def _redraw_curve(self):
+        """Redraw the power trace, smoothed or raw, without touching intervals."""
+        p = smooth(self._t, self._p) if self.smooth_check.isChecked() else self._p
+        self.curve.setData(self._t, p)
 
     def _make_region(self, start, end, itype=labelio.DEFAULT_TYPE):
         region = pg.LinearRegionItem([start, end], brush=pg.mkBrush(255, 140, 0, 60))

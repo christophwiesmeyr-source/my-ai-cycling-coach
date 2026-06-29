@@ -16,6 +16,11 @@
       "start_s": 4629.1,
       "end_s": 5108.7,
       "type": "sweet_spot"
+    },
+    {
+      "start_s": 5345.7,
+      "end_s": 5823.2,
+      "type": "sweet_spot"
     }
   ]
 }

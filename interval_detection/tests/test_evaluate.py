@@ -133,6 +133,26 @@ def test_merge_rule_blocks_whole_ride_gaming(bench):
     assert rep["overall"]["fn"] == 2 and rep["overall"]["fp"] == 1
 
 
+def test_short_gt_excluded_from_scope(tmp_path):
+    acts = tmp_path / "activities"
+    labs = tmp_path / "labels"
+    acts.mkdir()
+    (acts / "S.csv").write_text("t,power\n" + "\n".join(f"{i},200" for i in range(700)) + "\n")
+    labelio.save_meta("S", indoor=True, sport_type="Ride", labels_dir=labs)
+    # a 30 s anaerobic rep (out of envelope) + a 300 s vo2max rep (in scope)
+    labelio.save_intervals("S", [(100, 130, "anaerobic"), (200, 500, "vo2max")], labels_dir=labs)
+
+    # a detector that only finds the in-scope rep
+    def predict(aid, t, power):
+        return [(200, 500)]
+
+    rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
+    assert rep["excluded_short_gt"] == 1
+    assert rep["overall"]["tp"] == 1 and rep["overall"]["fn"] == 0  # short one is not an FN
+    assert "anaerobic" not in rep["by_type"]                        # excluded from stratification
+    assert rep["by_type"]["vo2max"]["recall"] == 1.0
+
+
 def test_stratification_structure(bench):
     acts, labs = bench
     rep = evaluate.evaluate(predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs)

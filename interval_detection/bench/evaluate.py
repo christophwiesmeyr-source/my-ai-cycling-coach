@@ -32,6 +32,9 @@ from interval_detection import detect_intervals  # noqa: E402
 
 COVERAGE_THRESHOLD = 0.5
 ATHLETE_FTP = 325.0
+# Envelope floor: GT intervals shorter than this are out of scope (the detector
+# only targets >= 1 min reps) and are excluded from scoring.
+MIN_INTERVAL_S = 60.0
 
 
 def _overlap(a, b) -> float:
@@ -145,13 +148,15 @@ def _summary(counts, boundary):
 def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
              activities_dir: Path = labelio.ACTIVITIES_DIR,
              labels_dir: Path = labelio.LABELS_DIR,
-             threshold: float = COVERAGE_THRESHOLD) -> dict:
+             threshold: float = COVERAGE_THRESHOLD,
+             min_gt_duration_s: float = MIN_INTERVAL_S) -> dict:
     """Run a detector over the labelled bench and return a stratified report.
 
     ``predict`` is a callable ``(activity_id, t, power) -> list[(start_s, end_s)]``.
     The default wraps the package detector with ``ftp``. Only activities whose
     annotation has been labelled (``intervals`` is a list, not ``None``) are
-    scored; ``[]`` distractors count toward precision only.
+    scored; ``[]`` distractors count toward precision only. GT intervals shorter
+    than ``min_gt_duration_s`` are out of the operating envelope and excluded.
     """
     if predict is None:
         def predict(_aid, t, power):
@@ -165,6 +170,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
     type_total, type_found = Counter(), Counter()
     type_boundary = defaultdict(list)
     n_act = 0
+    n_excluded = 0
 
     for aid in ids:
         ann = labelio.load_annotation(aid, labels_dir)
@@ -173,7 +179,10 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
         n_act += 1
         t, power = labelio.load_activity_csv(aid, activities_dir)
         preds = [(float(iv[0]), float(iv[1])) for iv in predict(aid, t, power)]
-        gt_se = [(s, e) for s, e, _ in ann["intervals"]]
+
+        gts = [iv for iv in ann["intervals"] if iv[1] - iv[0] >= min_gt_duration_s]
+        n_excluded += len(ann["intervals"]) - len(gts)
+        gt_se = [(s, e) for s, e, _ in gts]
 
         tp_pairs, fp, fn = match(preds, gt_se, threshold)
         tp = len(tp_pairs)
@@ -184,7 +193,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
 
         matched = {j: i for i, j in tp_pairs}
         boundary_all.extend(boundary_error(preds[i], gt_se[j]) for i, j in tp_pairs)
-        for j, (s, e, typ) in enumerate(ann["intervals"]):
+        for j, (s, e, typ) in enumerate(gts):
             type_total[typ] += 1
             if j in matched:
                 type_found[typ] += 1
@@ -192,6 +201,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
 
     return {
         "n_activities": n_act,
+        "excluded_short_gt": n_excluded,
         "overall": _summary(overall, boundary_all),
         "by_place": {g: _summary(c, None) for g, c in place.items()},
         "by_type": {
@@ -241,7 +251,8 @@ def _text_histogram(values, bins: int = 10, width: int = 40) -> str:
 
 
 def format_report(report: dict) -> str:
-    lines = [f"Evaluated {report['n_activities']} labelled activities.", ""]
+    lines = [f"Evaluated {report['n_activities']} labelled activities "
+             f"(excluded {report['excluded_short_gt']} sub-{int(MIN_INTERVAL_S)}s GT, out of envelope).", ""]
 
     o = report["overall"]
     lines.append("Overall (micro-averaged):")

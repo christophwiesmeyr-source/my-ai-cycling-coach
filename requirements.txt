@@ -10,3 +10,7 @@ markdown
 pytest
 pytest-mock
 pytest-cov
+
+# Local interval-detection engine (editable while co-located; pin a version
+# once extracted to its own repository).
+-e ./interval_detection

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interval_detection"
+version = "0.0.1"
+description = "Detect structured work intervals from cycling power data"
+requires-python = ">=3.10"
+# Kept deliberately minimal. The detection algorithm is not yet chosen; add
+# `ruptures` (or whatever the baseline ends up needing) when detector.py grows.
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

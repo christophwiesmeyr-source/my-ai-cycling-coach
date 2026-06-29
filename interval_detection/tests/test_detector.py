@@ -5,6 +5,7 @@ from interval_detection import detect_intervals
 from interval_detection.detector import (
     _intensity_threshold,
     _merge_close,
+    _min_duration_for_intensity,
     _runs,
 )
 
@@ -60,14 +61,14 @@ def _signal(blocks, total, base=100.0, high=250.0):
 
 
 def test_detects_single_sustained_block():
-    t, p = _signal([(600, 900)], 1500)  # 300 s block
+    t, p = _signal([(600, 1000)], 1600, high=300)  # 400 s at 1.2x FTP
     intervals = detect_intervals(t, p, ftp=250)  # threshold 200
     assert len(intervals) == 1
     iv = intervals[0]
     # boundaries land near the block, within smoothing slop
-    assert 590 <= iv.start_s <= 620
-    assert 880 <= iv.end_s <= 910
-    assert iv.duration_s >= 250
+    assert 585 <= iv.start_s <= 615
+    assert 985 <= iv.end_s <= 1015
+    assert iv.duration_s >= 380
 
 
 def test_ignores_short_surge():
@@ -76,8 +77,35 @@ def test_ignores_short_surge():
 
 
 def test_two_far_blocks_detected_separately():
-    t, p = _signal([(300, 500), (1000, 1200)], 1600)  # 500 s apart
+    t, p = _signal([(300, 500), (1000, 1200)], 1600, high=300)  # 1.2x FTP, 90 s floor
     assert len(detect_intervals(t, p, ftp=250)) == 2
+
+
+# --- power-duration rule -------------------------------------------------- #
+
+def test_min_duration_for_intensity_bands():
+    assert _min_duration_for_intensity(0.85) == 420.0   # low sweet spot
+    assert _min_duration_for_intensity(0.95) == 255.0   # sweet spot
+    assert _min_duration_for_intensity(1.05) == 150.0   # threshold
+    assert _min_duration_for_intensity(1.20) == 75.0    # VO2 / anaerobic
+
+
+def test_short_modest_block_rejected():
+    # 200 s at 85% FTP -> needs >= 8 min -> dropped (this is the FP cluster)
+    t, p = _signal([(600, 800)], 1400, base=100.0, high=213.0)  # 213/250 = 0.85
+    assert detect_intervals(t, p, ftp=250) == []
+
+
+def test_short_hard_block_kept():
+    # 150 s at 120% FTP -> needs only >= 90 s -> kept
+    t, p = _signal([(600, 750)], 1400, base=100.0, high=300.0)  # 300/250 = 1.2
+    assert len(detect_intervals(t, p, ftp=250)) == 1
+
+
+def test_long_modest_block_kept():
+    # 700 s at 85% FTP -> clears the 8 min floor -> kept
+    t, p = _signal([(600, 1300)], 1900, base=100.0, high=213.0)
+    assert len(detect_intervals(t, p, ftp=250)) == 1
 
 
 def test_no_ftp_uses_average_threshold():

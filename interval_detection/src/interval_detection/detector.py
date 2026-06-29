@@ -9,10 +9,14 @@ period of elevated power**. On the 20 s-averaged signal:
   2. take maximal runs above the threshold;
   3. bridge runs separated by a gap <= ``min_separation_s`` (so a brief mid-rep
      dip doesn't fragment one interval) — merge *before* the duration filter;
-  4. keep merged runs lasting at least ``min_duration_s``.
+  4. keep merged runs that clear an intensity-dependent duration floor (the
+     power-duration rule): the lower a block's mean power, the longer it must
+     last to count as a structured interval (no 2-min sweet spot, no 20-min
+     VO2). Without FTP a flat ``min_duration_s`` floor is used.
 
-This does not yet judge the *variability* of power within an interval; that can
-be layered on later.
+Variability of power *within* an interval turned out not to separate real
+intervals from steady climbs (both are low-variability), so it is intentionally
+not used; the power-duration rule is the discriminator instead.
 """
 from typing import List, Optional
 
@@ -29,6 +33,28 @@ DEFAULT_MIN_SEPARATION_S = 30.0
 # Intensity threshold relative to FTP, and the fallback multiple of mean power.
 FTP_FRACTION = 0.8
 NO_FTP_MULTIPLIER = 1.2
+
+# Power-duration rule: a detected block is a plausible *structured* interval only
+# if it lasts long enough for its intensity. Higher intensity -> shorter minimum
+# (you can't hold VO2 for 10 min, and nobody prescribes a 2-min sweet spot).
+# Floors sit ~15% below the nominal prescription (8/5/3/1.5 min) because a
+# prescribed rep is ridden and detected a little short (a "3 min" rep ~ 2:55).
+# Each entry is (intensity strictly below this fraction of FTP, min seconds).
+# Only used when FTP is known.
+DURATION_FLOORS = [
+    (0.90, 420.0),         # < 90% FTP : tempo / low sweet spot (nom. 8 min)
+    (1.00, 255.0),         # 90-100%   : sweet spot / sub-thresh (nom. 5 min)
+    (1.12, 150.0),         # 100-112%  : threshold / low VO2     (nom. 3 min)
+    (float("inf"), 75.0),  # > 112%    : VO2 / anaerobic         (nom. 1.5 min)
+]
+
+
+def _min_duration_for_intensity(intensity_frac: float) -> float:
+    """Minimum plausible duration for a block at ``intensity_frac`` x FTP."""
+    for upper, min_dur in DURATION_FLOORS:
+        if intensity_frac < upper:
+            return min_dur
+    return DURATION_FLOORS[-1][1]
 
 
 def _intensity_threshold(power_1hz: np.ndarray, ftp: Optional[float]) -> float:
@@ -102,6 +128,13 @@ def detect_intervals(
     intervals = []
     for start, end in runs:
         t0, t1 = float(grid_s[start]), float(grid_s[end - 1])
-        if t1 - t0 >= min_duration_s:
+        if ftp:
+            # Median (not mean) — robust to ramp-up/down tails that would
+            # otherwise dilute the effort into a stricter (lower) band.
+            intensity = float(np.median(power_1hz[start:end])) / ftp
+            floor = _min_duration_for_intensity(intensity)
+        else:
+            floor = min_duration_s
+        if t1 - t0 >= floor:
             intervals.append(Interval(t0, t1))
     return intervals

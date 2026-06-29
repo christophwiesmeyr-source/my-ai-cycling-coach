@@ -225,6 +225,7 @@ class Labeler(QtWidgets.QMainWindow):
         path = labelio.save_intervals(self.current_id, self.intervals())
         self._dirty = False
         self._loaded_labeled = True
+        self._update_annot_label()
         self.statusBar().showMessage(f"saved {path}", 3000)
 
     def _autosave(self):

@@ -6,6 +6,10 @@ and detector consume. Keeps the dependency arrow app -> package.
 
 Usage:
     python -m src.data.export_for_bench <activity_id> [<activity_id> ...]
+
+Writes the (t, power) trace to bench/activities/<id>.csv and seeds the
+annotation file bench/labels/<id>.json with auto-derived meta (indoor /
+sport_type). Interval ground truth is added later with the label tool.
 """
 import sys
 from pathlib import Path
@@ -15,10 +19,12 @@ import pandas as pd
 
 from src.data.strava_api import StravaClient
 
-# interval_detection/bench/activities, relative to this file (src/data/...).
-BENCH_ACTIVITIES_DIR = (
-    Path(__file__).resolve().parents[2] / "interval_detection" / "bench" / "activities"
-)
+_BENCH_DIR = Path(__file__).resolve().parents[2] / "interval_detection" / "bench"
+BENCH_ACTIVITIES_DIR = _BENCH_DIR / "activities"
+
+# Reuse the bench's annotation IO so the schema lives in one place.
+sys.path.insert(0, str(_BENCH_DIR))
+import labelio  # noqa: E402
 
 
 def export_activity(activity_id: int, client: StravaClient | None = None,
@@ -28,6 +34,7 @@ def export_activity(activity_id: int, client: StravaClient | None = None,
     Returns the path written. Raises ValueError if the activity has no power.
     """
     client = client or StravaClient()
+    metadata = client._get_activity_detail(activity_id)
     activity = client.download_activity(activity_id)
 
     power = activity.get_time_series("power")
@@ -41,6 +48,12 @@ def export_activity(activity_id: int, client: StravaClient | None = None,
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{activity_id}.csv"
     df.to_csv(out_path, index=False)
+
+    # Seed annotation meta (preserves any existing labels via save_meta merge).
+    sport_type = metadata.get("sport_type") or metadata.get("type")
+    indoor = bool(metadata.get("trainer")) or sport_type == "VirtualRide"
+    labelio.save_meta(activity_id, indoor=indoor, sport_type=sport_type)
+
     return out_path
 
 

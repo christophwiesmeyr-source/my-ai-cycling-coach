@@ -32,6 +32,8 @@ from interval_detection import detect_intervals  # noqa: E402
 
 COVERAGE_THRESHOLD = 0.5
 ATHLETE_FTP = 325.0
+# Tolerance for calling a boundary "on time" vs late/early (seconds).
+BOUNDARY_TOL_S = 2.0
 # Envelope floor: GT intervals shorter than this are out of scope (the detector
 # only targets >= 1 min reps) and are excluded from scoring.
 MIN_INTERVAL_S = 60.0
@@ -137,6 +139,33 @@ def _bstats(values):
     }
 
 
+def _signed_boundary(dstart, dend, tol: float = BOUNDARY_TOL_S):
+    """Signed boundary behaviour over matched pairs (pred - GT).
+
+    Positive = late: a late start clips into the rep; a late end runs into the
+    recovery (diluting the interval's averaged stats). ``length`` is pred minus
+    GT duration (= dend - dstart). ``None`` when there are no matched pairs.
+    """
+    if not dstart:
+        return None
+
+    def split(vals):
+        late = sum(1 for v in vals if v > tol)
+        early = sum(1 for v in vals if v < -tol)
+        return {"mean": statistics.fmean(vals), "median": statistics.median(vals),
+                "late": late, "early": early, "on": len(vals) - late - early}
+
+    length = [de - ds for ds, de in zip(dstart, dend)]
+    longer = sum(1 for v in length if v > tol)
+    shorter = sum(1 for v in length if v < -tol)
+    return {
+        "n": len(dstart),
+        "start": split(dstart),
+        "end": split(dend),
+        "length": {"longer": longer, "shorter": shorter, "same": len(length) - longer - shorter},
+    }
+
+
 def _summary(counts, boundary):
     precision, recall, f1 = _prf(counts["tp"], counts["fp"], counts["fn"])
     out = {**counts, "precision": precision, "recall": recall, "f1": f1}
@@ -167,6 +196,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
     overall = {"tp": 0, "fp": 0, "fn": 0}
     place = {"indoor": {"tp": 0, "fp": 0, "fn": 0}, "outdoor": {"tp": 0, "fp": 0, "fn": 0}}
     boundary_all = []
+    dstart_all, dend_all = [], []
     type_total, type_found = Counter(), Counter()
     type_boundary = defaultdict(list)
     n_act = 0
@@ -193,6 +223,8 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
 
         matched = {j: i for i, j in tp_pairs}
         boundary_all.extend(boundary_error(preds[i], gt_se[j]) for i, j in tp_pairs)
+        dstart_all.extend(preds[i][0] - gt_se[j][0] for i, j in tp_pairs)
+        dend_all.extend(preds[i][1] - gt_se[j][1] for i, j in tp_pairs)
         for j, (s, e, typ) in enumerate(gts):
             type_total[typ] += 1
             if j in matched:
@@ -202,6 +234,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
     return {
         "n_activities": n_act,
         "excluded_short_gt": n_excluded,
+        "boundary_direction": _signed_boundary(dstart_all, dend_all),
         "overall": _summary(overall, boundary_all),
         "by_place": {g: _summary(c, None) for g, c in place.items()},
         "by_type": {
@@ -228,6 +261,35 @@ def _fmt(x, pct=False):
 
 def _secs(x):
     return "n/a" if x is None else f"{x:.1f}s"
+
+
+def _bin_counts(values, step: float, upto: float):
+    """Counts of values in [0, step), [step, 2*step), ... up to `upto`, + overflow."""
+    n_bins = int(round(upto / step))
+    counts = [0] * n_bins
+    overflow = 0
+    for v in values:
+        if v >= upto:
+            overflow += 1
+        else:
+            counts[int(v // step)] += 1
+    return counts, overflow
+
+
+def _fine_histogram(values, step: float = 3.0, upto: float = 42.0, width: int = 40) -> str:
+    """Fine-grained histogram zooming into small boundary errors (the ones that
+    still matter — even a sub-bucket error skews the interval's averaged stats)."""
+    if not values:
+        return "  (no matched intervals)"
+    counts, overflow = _bin_counts(values, step, upto)
+    peak = max(counts) or 1
+    lines = []
+    for k, c in enumerate(counts):
+        lo = k * step
+        bar = "#" * round(width * c / peak)
+        lines.append(f"  {lo:5.0f}–{lo + step:<5.0f}s | {bar} {c}")
+    lines.append(f"  ≥ {upto:<6.0f}s | {overflow}")
+    return "\n".join(lines)
 
 
 def _text_histogram(values, bins: int = 10, width: int = 40) -> str:
@@ -277,8 +339,23 @@ def format_report(report: dict) -> str:
                      f"boundary mean {_secs(bb['mean'])}")
     lines.append("")
 
+    bd = report["boundary_direction"]
+    if bd:
+        s, e, length = bd["start"], bd["end"], bd["length"]
+        lines.append("Boundary direction (pred − GT; + = late, end-late runs into recovery):")
+        lines.append(f"  start: mean {s['mean']:+5.1f}s  median {s['median']:+5.1f}s   "
+                     f"(late {s['late']}, early {s['early']}, on {s['on']})")
+        lines.append(f"  end:   mean {e['mean']:+5.1f}s  median {e['median']:+5.1f}s   "
+                     f"(late {e['late']}, early {e['early']}, on {e['on']})")
+        lines.append(f"  length vs GT: shorter {length['shorter']}, "
+                     f"longer {length['longer']}, same {length['same']}")
+        lines.append("")
+
     lines.append("Boundary-error distribution (matched intervals):")
     lines.append(_text_histogram(o["boundary"]["values"]))
+    lines.append("")
+    lines.append("Boundary-error distribution — fine (0–42 s in 3 s steps):")
+    lines.append(_fine_histogram(o["boundary"]["values"]))
     return "\n".join(lines)
 
 

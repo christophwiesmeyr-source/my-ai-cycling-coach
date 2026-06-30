@@ -133,6 +133,28 @@ def test_merge_rule_blocks_whole_ride_gaming(bench):
     assert rep["overall"]["fn"] == 2 and rep["overall"]["fp"] == 1
 
 
+def test_signed_boundary_directions():
+    # pair 1: starts 5 s late, ends 3 s early -> shorter
+    # pair 2: starts 1 s early, ends 1 s late  -> within tol on both, length same
+    bd = evaluate._signed_boundary([5.0, -1.0], [-3.0, 1.0])
+    assert bd["n"] == 2
+    assert bd["start"]["late"] == 1 and bd["start"]["on"] == 1
+    assert bd["end"]["early"] == 1 and bd["end"]["on"] == 1
+    assert bd["length"]["shorter"] == 1 and bd["length"]["same"] == 1
+
+
+def test_signed_boundary_none_without_matches():
+    assert evaluate._signed_boundary([], []) is None
+
+
+def test_fine_histogram_bins_and_overflow():
+    counts, overflow = evaluate._bin_counts([0, 2, 4, 41, 100], step=3.0, upto=42.0)
+    assert counts[0] == 2   # 0 and 2 -> first 3 s bin
+    assert counts[1] == 1   # 4 -> second bin
+    assert counts[13] == 1  # 41 -> last in-range bin
+    assert overflow == 1    # 100 -> overflow
+
+
 def test_short_gt_excluded_from_scope(tmp_path):
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"

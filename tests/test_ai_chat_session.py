@@ -89,37 +89,42 @@ class TestBuildSystem:
              patch("src.ai.chat_session.SESSIONS_ADAPTED_PATH", tmp_path / "sessions_adapted.csv"):
             return ChatSession()
 
+    @staticmethod
+    def _text(session):
+        """Concatenated text of all system blocks (build_system returns blocks)."""
+        return "".join(block["text"] for block in session.build_system())
+
     def test_always_contains_base_prompt(self, tmp_path):
         session = self._make_session(tmp_path)
-        assert _SYSTEM_BASE in session.build_system()
+        assert _SYSTEM_BASE in self._text(session)
 
     def test_no_plans_returns_base_only(self, tmp_path):
         session = self._make_session(tmp_path)
-        system = session.build_system()
+        system = self._text(session)
         assert "Original Training Plan" not in system
         assert "Adapted Training Plan" not in system
 
     def test_includes_original_plan_when_set(self, tmp_path):
         session = self._make_session(tmp_path, original="# Week 1")
-        system = session.build_system()
+        system = self._text(session)
         assert "Original Training Plan" in system
         assert "# Week 1" in system
 
     def test_includes_adapted_plan_when_set(self, tmp_path):
         session = self._make_session(tmp_path, adapted="# Adapted")
-        system = session.build_system()
+        system = self._text(session)
         assert "Adapted Training Plan" in system
         assert "# Adapted" in system
 
     def test_includes_both_plans_when_both_set(self, tmp_path):
         session = self._make_session(tmp_path, original="# Original", adapted="# Adapted")
-        system = session.build_system()
+        system = self._text(session)
         assert "Original Training Plan" in system
         assert "Adapted Training Plan" in system
 
     def test_original_plan_precedes_adapted_plan(self, tmp_path):
         session = self._make_session(tmp_path, original="# Original", adapted="# Adapted")
-        system = session.build_system()
+        system = self._text(session)
         assert system.index("Original Training Plan") < system.index("Adapted Training Plan")
 
     def test_includes_session_table_when_sessions_present(self, tmp_path):
@@ -130,9 +135,34 @@ class TestBuildSystem:
         with patch("src.ai.chat_session.SESSIONS_ORIGINAL_PATH", csv_file), \
              patch("src.ai.chat_session.SESSIONS_ADAPTED_PATH", tmp_path / "missing_adapted.csv"), \
              patch("src.ai.chat_session.SESSIONS_LOG_PATH", tmp_path / "missing.json"):
-            system = session.build_system()
-        assert "Session log" in system
-        assert recent in system
+            blocks = session.build_system()
+        text = "".join(b["text"] for b in blocks)
+        assert "Session log" in text
+        assert recent in text
+
+    def test_stable_prefix_is_cached_session_table_is_not(self, tmp_path):
+        # plans live in the cached prefix block; the volatile session table
+        # (today's date + log) is a separate, uncached block after it.
+        recent = (date.today() - timedelta(days=3)).isoformat()
+        csv_file = tmp_path / "sessions.csv"
+        csv_file.write_text(f"{_CSV_HEADER}\n{_csv_row(recent)}")
+        session = self._make_session(tmp_path, original="# Original")
+        with patch("src.ai.chat_session.SESSIONS_ORIGINAL_PATH", csv_file), \
+             patch("src.ai.chat_session.SESSIONS_ADAPTED_PATH", tmp_path / "missing_adapted.csv"), \
+             patch("src.ai.chat_session.SESSIONS_LOG_PATH", tmp_path / "missing.json"):
+            blocks = session.build_system()
+        assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+        assert "Original Training Plan" in blocks[0]["text"]
+        assert "cache_control" not in blocks[-1]      # session table block
+        assert "Session log" in blocks[-1]["text"]
+
+    def test_no_session_table_means_single_cached_block(self, tmp_path):
+        session = self._make_session(tmp_path, original="# Original")
+        with patch("src.ai.chat_session.SESSIONS_ORIGINAL_PATH", tmp_path / "missing.csv"), \
+             patch("src.ai.chat_session.SESSIONS_ADAPTED_PATH", tmp_path / "missing_adapted.csv"):
+            blocks = session.build_system()
+        assert len(blocks) == 1
+        assert blocks[0]["cache_control"] == {"type": "ephemeral"}
 
 
 class TestBuildSessionTable:

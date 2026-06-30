@@ -89,13 +89,28 @@ class ChatSession:
     def add_assistant_message(self, text: str):
         self.history.append({"role": "assistant", "content": text})
 
-    def build_system(self) -> str:
+    def build_system(self) -> list:
+        """System prompt as cache-friendly content blocks.
+
+        The stable prefix (base instructions + plans) carries a prompt-cache
+        breakpoint, so it is re-read at ~0.1x input cost on every tool
+        round-trip and follow-up turn instead of being re-billed in full. The
+        volatile session table (today's date + completion log) is kept *after*
+        the breakpoint, so changing it never invalidates the cached plans.
+        """
         parts = [_SYSTEM_BASE]
         if self.original_plan:
             parts.append(f"\n\n## Original Training Plan\n\n{self.original_plan}")
         if self.adapted_plan:
             parts.append(f"\n\n## Adapted Training Plan\n\n{self.adapted_plan}")
+
+        blocks = [{
+            "type": "text",
+            "text": "\n".join(parts),
+            "cache_control": {"type": "ephemeral"},
+        }]
+
         session_table = _build_session_table()
         if session_table:
-            parts.append(f"\n\n{session_table}")
-        return "\n".join(parts)
+            blocks.append({"type": "text", "text": f"\n\n{session_table}"})
+        return blocks

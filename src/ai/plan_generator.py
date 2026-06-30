@@ -3,9 +3,21 @@ from typing import cast
 
 from anthropic.types import TextBlock
 
-from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL
+from src.constants import (
+    APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL,
+    PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH,
+)
 from src.goals import GOAL_FIELDS
 from .client import get_client
+
+
+def clear_derived_plan_data() -> None:
+    """Delete data derived from a previous plan: the adapted plan, its session
+    list, and the completion log (keyed by the old plan's dates). Call after a
+    new plan is generated — that data is meaningless against the new plan.
+    """
+    for path in (PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH):
+        path.unlink(missing_ok=True)
 
 
 def generate_plan(goals: dict) -> str:

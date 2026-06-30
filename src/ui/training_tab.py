@@ -341,6 +341,19 @@ class TrainingTab(QWidget):
             QMessageBox.warning(self, "Missing Goal", "Please enter a main training goal.")
             return
 
+        if PLAN_ORIGINAL_PATH.exists():
+            confirm = QMessageBox.question(
+                self,
+                "Regenerate plan?",
+                "Generating a new plan replaces the current session list and "
+                "permanently deletes the plan and all logged session "
+                "completions.\n\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
         self._save_goals(goals)
         self._set_busy(True, "Starting…")
         worker = PlanGeneratorWorker(goals)
@@ -354,6 +367,7 @@ class TrainingTab(QWidget):
 
     def _on_plan_generated(self, plan: str):
         self.original_plan_view.setHtml(self._render_markdown(plan))
+        self.adapted_plan_view.clear()  # adapted plan was just invalidated/deleted
         self._load_sessions_table()
         self.plan_tabs.setCurrentIndex(0)
         self.chat_session.reload_plans()

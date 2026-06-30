@@ -1,10 +1,35 @@
 """Tests for src/ai/plan_generator.py — pure helper functions only (no API calls)."""
+from unittest.mock import patch
+
 from src.ai.plan_generator import (
     _build_plan_header,
     _build_plan_prompt,
     _build_sessions_prompt,
     _extract_csv,
+    clear_derived_plan_data,
 )
+
+
+class TestClearDerivedPlanData:
+    def test_deletes_adapted_plan_sessions_and_log(self, tmp_path):
+        adapted = tmp_path / "plan_adapted.md"
+        sessions = tmp_path / "sessions_adapted.csv"
+        log = tmp_path / "sessions_log.json"
+        for f in (adapted, sessions, log):
+            f.write_text("stale")
+        with patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", adapted), \
+             patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", sessions), \
+             patch("src.ai.plan_generator.SESSIONS_LOG_PATH", log):
+            clear_derived_plan_data()
+        assert not adapted.exists()
+        assert not sessions.exists()
+        assert not log.exists()
+
+    def test_no_error_when_files_absent(self, tmp_path):
+        with patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", tmp_path / "a.md"), \
+             patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", tmp_path / "s.csv"), \
+             patch("src.ai.plan_generator.SESSIONS_LOG_PATH", tmp_path / "l.json"):
+            clear_derived_plan_data()  # must not raise
 
 
 # ---------------------------------------------------------------------------

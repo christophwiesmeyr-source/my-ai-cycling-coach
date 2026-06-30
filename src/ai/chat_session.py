@@ -77,11 +77,14 @@ class ChatSession:
         self.reload_plans()
 
     def reload_plans(self):
-        """Re-read plan files from disk (call after generating or adapting a plan)."""
-        if PLAN_ORIGINAL_PATH.exists():
-            self.original_plan = PLAN_ORIGINAL_PATH.read_text()
-        if PLAN_ADAPTED_PATH.exists():
-            self.adapted_plan = PLAN_ADAPTED_PATH.read_text()
+        """Re-read plan files from disk (call after generating or adapting a plan).
+
+        Clears the in-memory copy when a file is absent, so a plan deleted on
+        disk (e.g. the adapted plan after regenerating) doesn't linger in the
+        cached system prompt.
+        """
+        self.original_plan = PLAN_ORIGINAL_PATH.read_text() if PLAN_ORIGINAL_PATH.exists() else ""
+        self.adapted_plan = PLAN_ADAPTED_PATH.read_text() if PLAN_ADAPTED_PATH.exists() else ""
 
     def add_user_message(self, text: str):
         self.history.append({"role": "user", "content": text})

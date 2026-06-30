@@ -47,6 +47,17 @@ class TestReloadPlans:
             session.reload_plans()
         assert session.original_plan == "# New Plan"
 
+    def test_reload_clears_deleted_adapted_plan(self, tmp_path):
+        adapted = tmp_path / "adapted.md"
+        adapted.write_text("# Adapted")
+        with patch("src.ai.chat_session.PLAN_ORIGINAL_PATH", tmp_path / "missing.md"), \
+             patch("src.ai.chat_session.PLAN_ADAPTED_PATH", adapted):
+            session = ChatSession()
+            assert session.adapted_plan == "# Adapted"
+            adapted.unlink()              # e.g. a new plan was generated
+            session.reload_plans()
+        assert session.adapted_plan == ""  # stale plan no longer lingers in memory
+
 
 class TestHistory:
     def _make_session(self, tmp_path):

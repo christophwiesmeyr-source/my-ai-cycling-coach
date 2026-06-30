@@ -4,7 +4,7 @@ from typing import Any
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from src.ai.client import get_client
-from src.ai.plan_generator import generate_plan, generate_sessions
+from src.ai.plan_generator import generate_plan, generate_sessions, clear_derived_plan_data
 from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
 from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
@@ -28,6 +28,8 @@ class PlanGeneratorWorker(QThread):
             plan = generate_plan(self.goals)
             self.status_update.emit("Generating session list…")
             generate_sessions(plan, self.goals)
+            # The new plan invalidates any adapted plan and completion log.
+            clear_derived_plan_data()
             self.finished.emit(plan)
         except Exception as exc:
             self.error_occurred.emit(str(exc))

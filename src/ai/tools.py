@@ -17,6 +17,7 @@ from src.analysis.activity_metrics import (
     total_work_kj,
     weighted_average,
 )
+from interval_detection import detect_intervals
 
 TOOLS = [
     {
@@ -115,6 +116,27 @@ TOOLS = [
         },
     },
     {
+        "name": "get_activity_intervals",
+        "description": (
+            "Detect the structured work intervals (reps) in an activity and report how each "
+            "was executed: time range, duration, average power and %FTP, Normalized Power, "
+            "average/max heart rate with start→end drift, and cadence. Use this to check "
+            "whether prescribed intervals were completed and how they were paced — controlled "
+            "and even, fading, or near-maximal. FTP and max HR are loaded from stored goals; "
+            "needs power data. Only structured efforts ≥1 min are reported (not surges/climbs)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "description": "The Strava activity ID.",
+                }
+            },
+            "required": ["activity_id"],
+        },
+    },
+    {
         "name": "get_activity_zones",
         "description": (
             "Break down a specific activity by time spent in each power zone (Z1–Z6, "
@@ -142,6 +164,7 @@ TOOL_STATUS_MESSAGES = {
     "get_activity_power_curve": "Computing power curve…",
     "get_activity_training_load": "Computing training load…",
     "get_activity_efficiency": "Analysing pacing and efficiency…",
+    "get_activity_intervals": "Detecting work intervals…",
     "get_activity_zones": "Analysing training zones…",
 }
 
@@ -195,6 +218,8 @@ def _execute_tool(block, strava_client) -> str:
         return _get_activity_training_load(strava_client, int(block.input["activity_id"]))
     if block.name == "get_activity_efficiency":
         return _get_activity_efficiency(strava_client, int(block.input["activity_id"]))
+    if block.name == "get_activity_intervals":
+        return _get_activity_intervals(strava_client, int(block.input["activity_id"]))
     if block.name == "get_activity_zones":
         return _get_activity_zones(strava_client, int(block.input["activity_id"]))
     return f"Unknown tool: {block.name}"
@@ -481,6 +506,75 @@ def _get_activity_efficiency(strava_client, activity_id: int) -> str:
     if split_lines:
         lines.append("  Splits (first half | second half):")
         lines += split_lines
+
+    return "\n".join(lines)
+
+
+def _get_activity_intervals(strava_client, activity_id: int) -> str:
+    try:
+        activity = strava_client.download_activity(activity_id)
+    except Exception as exc:
+        return f"Failed to download activity {activity_id}: {exc}"
+
+    power = activity.get_time_series("power")
+    if power is None or len(power) == 0:
+        return f"No power data for activity {activity_id}; interval detection needs power."
+
+    time_array = activity.get_time_array()
+    n = min(len(time_array), len(power))
+    time_array = np.asarray(time_array, dtype=float)[:n]
+    power = np.asarray(power, dtype=float)[:n]
+
+    goals = _load_goals()
+    ftp = int(goals.get("current_ftp_watts") or 0) or None
+
+    intervals = detect_intervals(time_array, power, ftp=ftp)
+    if not intervals:
+        return f"No structured work intervals (≥1 min) detected in activity {activity_id}."
+
+    hr = activity.get_time_series("heart_rate")
+    hr = np.asarray(hr, dtype=float)[:n] if hr is not None and len(hr) > 0 else None
+    cadence = activity.get_time_series("cadence")
+    cadence = np.asarray(cadence, dtype=float)[:n] if cadence is not None and len(cadence) > 0 else None
+
+    header = f"Activity {activity_id}: {len(intervals)} structured work interval(s) detected"
+    header += f" (FTP {ftp} W):" if ftp else " (no FTP set — %FTP omitted):"
+    lines = [header]
+
+    for i, iv in enumerate(intervals, 1):
+        s_idx = int(np.searchsorted(time_array, iv.start_s, side="left"))
+        e_idx = max(s_idx + 1, int(np.searchsorted(time_array, iv.end_s, side="right")))
+        t_slice = time_array[s_idx:e_idx]
+        p_slice = power[s_idx:e_idx]
+
+        parts = [f"Interval {i}: {_fmt_duration(iv.start_s)}–{_fmt_duration(iv.end_s)} "
+                 f"({_fmt_duration(iv.duration_s)})"]
+
+        avg_p = weighted_average(p_slice, t_slice)
+        if avg_p is not None:
+            seg = f"{avg_p:.0f} W avg"
+            if ftp:
+                seg += f" ({100 * avg_p / ftp:.0f}% FTP)"
+            parts.append(seg)
+        np_p = normalized_power(p_slice, t_slice)
+        if np_p is not None:
+            parts.append(f"NP {np_p:.0f} W")
+
+        if hr is not None:
+            h_slice = hr[s_idx:e_idx]
+            valid = h_slice[~np.isnan(h_slice)]
+            if len(valid) > 0:
+                third = max(1, len(valid) // 3)
+                start_hr, end_hr = np.mean(valid[:third]), np.mean(valid[-third:])
+                parts.append(f"HR {start_hr:.0f}→{end_hr:.0f} (avg {np.mean(valid):.0f}, "
+                             f"max {np.max(valid):.0f})")
+
+        if cadence is not None:
+            avg_cad = weighted_average(cadence[s_idx:e_idx], t_slice)
+            if avg_cad is not None:
+                parts.append(f"{avg_cad:.0f} rpm")
+
+        lines.append("  " + " | ".join(parts))
 
     return "\n".join(lines)
 

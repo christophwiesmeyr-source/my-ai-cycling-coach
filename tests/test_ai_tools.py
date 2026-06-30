@@ -10,6 +10,7 @@ from src.data.activity import Activity
 from src.ai.tools import (
     _get_activity_details,
     _get_activity_efficiency,
+    _get_activity_intervals,
     _get_activity_power_curve,
     _get_activity_training_load,
     _get_activity_zones,
@@ -140,6 +141,12 @@ class TestExecuteTools:
     def test_routes_get_activity_efficiency(self):
         block = _make_block("get_activity_efficiency", activity_id=1)
         with patch("src.ai.tools._get_activity_efficiency", return_value="ok") as fn:
+            execute_tools([block], Mock())
+        fn.assert_called_once()
+
+    def test_routes_get_activity_intervals(self):
+        block = _make_block("get_activity_intervals", activity_id=1)
+        with patch("src.ai.tools._get_activity_intervals", return_value="ok") as fn:
             execute_tools([block], Mock())
         fn.assert_called_once()
 
@@ -399,6 +406,59 @@ class TestGetActivityEfficiency:
         client = Mock()
         client.download_activity.side_effect = Exception("timeout")
         assert "Failed to download activity 42" in _get_activity_efficiency(client, 42)
+
+
+class TestGetActivityIntervals:
+    def _activity_with_block(self, n=1500, hr_drift=False):
+        power = np.full(n, 100.0)
+        power[600:1000] = 300.0  # 400 s block at 300 W (1.2x a 250 W FTP)
+        hr = np.full(n, 140.0)
+        if hr_drift:
+            hr[600:1000] = np.linspace(150, 175, 400)
+        return _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
+
+    def test_detects_and_reports_execution(self, tmp_path):
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        client = Mock()
+        client.download_activity.return_value = self._activity_with_block(hr_drift=True)
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_intervals(client, 42)
+        assert "1 structured work interval" in result
+        assert "Interval 1:" in result
+        assert "FTP 250 W" in result
+        assert "% FTP)" in result
+        assert "HR " in result and "→" in result   # start->end drift reported
+        assert "rpm" in result
+
+    def test_no_intervals_when_flat(self, tmp_path):
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=600, power=100.0)
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_intervals(client, 42)
+        assert "No structured work intervals" in result
+
+    def test_no_power_returns_message(self, tmp_path):
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, power=None)
+        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+            result = _get_activity_intervals(client, 42)
+        assert "No power data" in result
+
+    def test_no_ftp_omits_percent(self, tmp_path):
+        client = Mock()
+        client.download_activity.return_value = self._activity_with_block()
+        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+            result = _get_activity_intervals(client, 42)
+        assert "no FTP set" in result
+        assert "% FTP)" not in result
+
+    def test_download_error_returns_error(self):
+        client = Mock()
+        client.download_activity.side_effect = Exception("timeout")
+        assert "Failed to download activity 42" in _get_activity_intervals(client, 42)
 
 
 # ---------------------------------------------------------------------------

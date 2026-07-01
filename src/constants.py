@@ -17,7 +17,7 @@ SESSIONS_LOG_PATH = APP_DIR / "sessions_log.json"
 GOALS_PATH = APP_DIR / "goals.json"
 
 # AI settings
-AI_MODEL = "claude-sonnet-4-6"
+AI_MODEL = "claude-sonnet-5"
 
 # Strava history window used by the plan adaptor agent
 STRAVA_HISTORY_WEEKS = 8

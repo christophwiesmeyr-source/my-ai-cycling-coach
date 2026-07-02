@@ -7,14 +7,14 @@ from io import StringIO
 from src.constants import (
     PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH,
     SESSIONS_ORIGINAL_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH,
-    STRAVA_HISTORY_WEEKS,
+    ACTIVITY_HISTORY_WEEKS,
 )
 
 _SYSTEM_BASE = (
     "You are an expert cycling coach assistant. Help the athlete understand their training "
     "progress, compare completed workouts against the plan, and provide actionable advice. "
     "Be concise and practical. Reference specific sessions or metrics when relevant. "
-    "Use the available tools to fetch Strava activity data whenever it would help you give "
+    "Use the available tools to fetch activity data whenever it would help you give "
     "a more specific or accurate answer."
 )
 
@@ -37,7 +37,7 @@ def _build_session_table() -> str:
         log = {}
 
     today = datetime.date.today()
-    cutoff = today - datetime.timedelta(weeks=STRAVA_HISTORY_WEEKS)
+    cutoff = today - datetime.timedelta(weeks=ACTIVITY_HISTORY_WEEKS)
 
     lines = [
         "## Session log\n",

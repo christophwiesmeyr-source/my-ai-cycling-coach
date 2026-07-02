@@ -1,8 +1,9 @@
-"""Export a Strava activity to the interval-detection bench's neutral format.
+"""Export an activity to the interval-detection bench's neutral format.
 
-This is the *only* Strava-aware piece of the interval-detection workflow: it
-dumps an activity to a stripped ``t,power`` CSV that the (app-independent) bench
-and detector consume. Keeps the dependency arrow app -> package.
+This is the *only* data-source-aware piece of the interval-detection
+workflow: it dumps an activity to a stripped ``t,power`` CSV that the
+(app-independent) bench and detector consume. Keeps the dependency arrow
+app -> package.
 
 Usage:
     python -m src.data.export_for_bench <activity_id> [<activity_id> ...]
@@ -17,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.data.strava_api import StravaClient
+from src.data.intervals_api import IntervalsClient
 
 _BENCH_DIR = Path(__file__).resolve().parents[2] / "interval_detection" / "bench"
 BENCH_ACTIVITIES_DIR = _BENCH_DIR / "activities"
@@ -27,13 +28,13 @@ sys.path.insert(0, str(_BENCH_DIR))
 import labelio  # noqa: E402
 
 
-def export_activity(activity_id: int, client: StravaClient | None = None,
+def export_activity(activity_id, client: IntervalsClient | None = None,
                     out_dir: Path = BENCH_ACTIVITIES_DIR) -> Path:
     """Download an activity and write its (t, power) series as CSV.
 
     Returns the path written. Raises ValueError if the activity has no power.
     """
-    client = client or StravaClient()
+    client = client or IntervalsClient()
     metadata = client._get_activity_detail(activity_id)
     activity = client.download_activity(activity_id)
 
@@ -61,13 +62,13 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 1
-    client = StravaClient()
-    for raw_id in argv:
+    client = IntervalsClient()
+    for activity_id in argv:
         try:
-            path = export_activity(int(raw_id), client=client)
+            path = export_activity(activity_id, client=client)
             print(f"wrote {path}")
         except Exception as exc:  # noqa: BLE001 - report and continue
-            print(f"activity {raw_id}: {exc}")
+            print(f"activity {activity_id}: {exc}")
     return 0
 
 

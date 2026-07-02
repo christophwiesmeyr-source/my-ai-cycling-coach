@@ -1,5 +1,4 @@
 setuptools
-fitparse
 pyqtgraph
 PyQt6
 numpy

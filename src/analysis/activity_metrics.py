@@ -9,10 +9,10 @@ place. Two design decisions worth knowing:
   weights from the actual timestamps and clamp gaps so a pause's duration is
   never attributed to the single sample that follows it.
 
-* "Moving" is taken from Strava's own ``moving`` boolean stream when present.
-  We do not re-derive it from speed (GPS-only rides drift and would fool a
-  threshold). If Strava gives us no moving stream, moving-only stats are simply
-  omitted rather than guessed.
+* "Moving" is taken from the data source's own ``moving`` boolean stream when
+  present. We do not re-derive it from speed (GPS-only rides drift and would
+  fool a threshold). If the source gives us no moving stream, moving-only
+  stats are simply omitted rather than guessed.
 """
 from typing import Optional
 
@@ -66,7 +66,7 @@ def sample_weights(time_array: np.ndarray, gap_threshold: Optional[float] = None
 
 
 def moving_mask(activity) -> Optional[np.ndarray]:
-    """Strava's per-sample moving flag as a boolean array, or None if absent."""
+    """Per-sample moving flag as a boolean array, or None if the source doesn't provide one."""
     series = activity.get_time_series("moving")
     if series is None or len(series) == 0:
         return None
@@ -107,7 +107,7 @@ def _count_stops(mask: np.ndarray) -> int:
 def time_summary(activity) -> dict:
     """Elapsed / moving / stopped seconds (+ stop count) where derivable.
 
-    Headline times prefer Strava metadata (``total_elapsed_time`` /
+    Headline times prefer activity metadata (``total_elapsed_time`` /
     ``total_moving_time``); moving time falls back to summing weighted
     moving-flagged samples. ``moving_s`` / ``stopped_s`` are omitted when moving
     cannot be determined at all.

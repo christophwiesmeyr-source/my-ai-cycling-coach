@@ -1,5 +1,5 @@
 """Data layer for loading and managing FIT file data"""
 from .activity import Activity
-from .strava_api import StravaClient, StravaClientError
+from .intervals_api import IntervalsClient, IntervalsClientError
 
-__all__ = ['Activity', 'StravaClient', 'StravaClientError']
+__all__ = ['Activity', 'IntervalsClient', 'IntervalsClientError']

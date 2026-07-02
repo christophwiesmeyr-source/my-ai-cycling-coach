@@ -1,17 +1,17 @@
-"""Plan adaptor agent — compares original plan to Strava activities and produces an adapted plan"""
+"""Plan adaptor agent — compares original plan to recent activities and produces an adapted plan"""
 import datetime
 import json
 from typing import Any
 
-from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL, STRAVA_HISTORY_WEEKS, SESSIONS_LOG_PATH
+from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL, ACTIVITY_HISTORY_WEEKS, SESSIONS_LOG_PATH
 from .client import get_client
 from .tools import TOOLS, execute_tools
 
 _SYSTEM = (
     "You are an expert cycling coach. You will analyse a training plan against the athlete's "
-    "actual completed workouts retrieved from Strava, identify gaps and achievements, and "
+    "actual completed workouts, identify gaps and achievements, and "
     "produce an adapted plan that accounts for their real progress. "
-    "Use the provided tools to query Strava data before drawing conclusions."
+    "Use the provided tools to query recent activity data before drawing conclusions."
 )
 
 _USER_PROMPT = """\
@@ -23,10 +23,10 @@ Here is the original training plan:
 
 {log_section}
 Please:
-1. Use the tools to retrieve recent Strava activities (start with the last {weeks} weeks).
+1. Use the tools to retrieve recent activities (start with the last {weeks} weeks).
 2. Compare completed workouts against the planned sessions — what was done, what was skipped, \
 and what the current fitness trajectory looks like. Where the session log above records a \
-completion date, use that date to find the matching Strava activity and assess quality.
+completion date, use that date to find the matching activity and assess quality.
 3. Identify 3-5 key observations about adherence and progress.
 4. Produce a complete adapted training plan in Markdown format that retains the original goals \
 but adjusts timing, intensity, and session structure based on what was actually completed.
@@ -56,8 +56,8 @@ def _build_log_section() -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def adapt_plan(strava_client) -> str:
-    """Run the agentic loop to adapt the original plan using Strava data."""
+def adapt_plan(activity_client) -> str:
+    """Run the agentic loop to adapt the original plan using recent activity data."""
     if not PLAN_ORIGINAL_PATH.exists():
         raise FileNotFoundError(
             "No original plan found. Generate a plan first using the Training tab."
@@ -70,7 +70,7 @@ def adapt_plan(strava_client) -> str:
         today=today,
         original_plan=original_plan,
         log_section=_build_log_section(),
-        weeks=STRAVA_HISTORY_WEEKS,
+        weeks=ACTIVITY_HISTORY_WEEKS,
     )
     messages: list[Any] = [{"role": "user", "content": prompt}]
 
@@ -91,7 +91,7 @@ def adapt_plan(strava_client) -> str:
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
-            messages.append({"role": "user", "content": execute_tools(response.content, strava_client)})
+            messages.append({"role": "user", "content": execute_tools(response.content, activity_client)})
             continue
 
         return _extract_text(response.content)

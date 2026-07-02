@@ -37,9 +37,9 @@ class _GoalField:
 
 
 class TrainingTab(QWidget):
-    def __init__(self, strava_client):
+    def __init__(self, activity_client):
         super().__init__()
-        self.strava_client = strava_client
+        self.activity_client = activity_client
         self.chat_session = ChatSession()
         self._active_worker = None
         self._loading_sessions = False
@@ -237,7 +237,7 @@ class TrainingTab(QWidget):
         self.btn_generate.clicked.connect(self._on_generate)
         layout.addWidget(self.btn_generate)
 
-        self.btn_adapt = QPushButton("Adapt Plan from Strava")
+        self.btn_adapt = QPushButton("Adapt Plan from Activities")
         self.btn_adapt.clicked.connect(self._on_adapt)
         layout.addWidget(self.btn_adapt)
 
@@ -269,7 +269,7 @@ class TrainingTab(QWidget):
         self.adapted_plan_view = QTextEdit()
         self.adapted_plan_view.setReadOnly(True)
         self.adapted_plan_view.setPlaceholderText(
-            "No adapted plan yet. Click Adapt Plan from Strava after completing some workouts."
+            "No adapted plan yet. Click Adapt Plan from Activities after completing some workouts."
         )
         self.plan_tabs.addTab(self.adapted_plan_view, "Adapted")
 
@@ -384,8 +384,8 @@ class TrainingTab(QWidget):
             )
             return
 
-        self._set_busy(True, "Querying Strava and adapting plan — this may take a minute…")
-        worker = PlanAdaptorWorker(self.strava_client)
+        self._set_busy(True, "Querying recent activities and adapting plan — this may take a minute…")
+        worker = PlanAdaptorWorker(self.activity_client)
         worker.finished.connect(self._on_plan_adapted)
         worker.error_occurred.connect(self._on_error)
         worker.finished.connect(lambda: self._set_busy(False, ""))
@@ -417,7 +417,7 @@ class TrainingTab(QWidget):
         self._set_chat_input_enabled(False)
         self._append_chat_assistant_start()
 
-        worker = ChatWorker(self.chat_session, self.strava_client)
+        worker = ChatWorker(self.chat_session, self.activity_client)
         worker.chunk_received.connect(self._on_chat_chunk)
         worker.tool_status.connect(self._on_chat_tool_status)
         worker.finished.connect(self._on_chat_finished)

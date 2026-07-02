@@ -1,10 +1,10 @@
 # My AI Cycling Coach
 
-A desktop application for analyzing cycling performance data from Strava activities, with an AI-powered training coach.
+A desktop application for analyzing cycling performance data from intervals.icu activities, with an AI-powered training coach.
 
 ## Features
 
-- **Sync from Strava**: Load the past year of activities directly from Strava metadata
+- **Sync from intervals.icu**: Load the past year of activities directly from intervals.icu metadata
 - **Interactive Plotting**: Visualize power output and heart rate with synchronized charts
 - **Time Selection**: Click-drag to select time ranges and analyze specific intervals
 - **Performance Analytics**: Calculate statistics (mean, max, min, std dev) for selected intervals
@@ -17,7 +17,7 @@ A desktop application for analyzing cycling performance data from Strava activit
 - **PyQt6**: Desktop application framework
 - **PyQtGraph**: High-performance data visualization
 - **pandas/NumPy**: Data processing
-- **Anthropic Claude**: AI training coach (claude-sonnet-4-6)
+- **Anthropic Claude**: AI training coach (claude-sonnet-5)
 
 ## Installation
 
@@ -31,17 +31,28 @@ This creates a virtual environment, installs dependencies, and registers the app
 
 ## Authentication
 
-### Strava
+### intervals.icu
 
-1. Sign in at [developers.strava.com](https://developers.strava.com) and go to **Create & Manage Your App**. Copy your **Client ID** and **Client Secret**.
-2. In your Strava app settings, add `http://localhost:5000/callback` as an authorised redirect URI.
-3. Run the included helper script — it opens your browser, handles the OAuth redirect, and saves the tokens automatically:
+Authentication is a static personal API key — no OAuth flow required.
+
+1. Sign in at [intervals.icu](https://intervals.icu) and go to **Settings → Developer Settings**.
+2. Copy your **API Key**. Your **athlete ID** (e.g. `i123456`) is shown on the same page and in your profile URL.
+3. Create `~/.my-ai-cycling-coach/intervals_config.json`:
 
 ```bash
-python src/data/get_strava_tokens.py --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+mkdir -p ~/.my-ai-cycling-coach
+cat > ~/.my-ai-cycling-coach/intervals_config.json <<'EOF'
+{
+  "athlete_id": "i123456",
+  "api_key": "your-api-key-here"
+}
+EOF
+chmod 600 ~/.my-ai-cycling-coach/intervals_config.json
 ```
 
-Tokens are saved to `~/.my-ai-cycling-coach/strava_tokens.json`. Keep this file private — it contains sensitive credentials.
+Keep this file private — it contains sensitive credentials.
+
+> **Note:** the app previously synced from Strava. That integration was removed from the codebase after Strava moved API access behind a paid subscription — it's preserved in git history if ever needed again.
 
 ### Claude API (AI Training Features)
 
@@ -72,9 +83,9 @@ python main.py
 
 ### Loading Activities
 
-On startup, activities from the last year are loaded from Strava using metadata only.
+On startup, activities from the last year are loaded from intervals.icu using metadata only.
 
-1. Use the **Refresh Activities** button to re-sync the latest activity list from Strava.
+1. Use the **Refresh Activities** button to re-sync the latest activity list from intervals.icu.
 2. Select an activity in the table to download its full data and display it.
 
 ### Analyzing Data
@@ -89,7 +100,7 @@ On startup, activities from the last year are loaded from Strava using metadata 
 Navigate to the **Training** tab to use the AI features:
 
 1. **Generate Plan**: Fill in your training goals (target event, weekly hours, current FTP, etc.) and click **Generate Plan**. The plan is saved to `~/.my-ai-cycling-coach/plan_original.md` and displayed in the viewer.
-2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent Strava activities, compares them against the plan, and writes an updated version to `~/.my-ai-cycling-coach/plan_adapted.md`.
+2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent intervals.icu activities, compares them against the plan, and writes an updated version to `~/.my-ai-cycling-coach/plan_adapted.md`.
 3. **Chat**: Use the chat panel at the bottom to ask your AI coach questions about your progress, request session advice, or discuss adjustments to the plan.
 
 ## License

@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 
 from src.constants import APP_NAME
-from src.data import Activity, StravaClient, StravaClientError
+from src.data import Activity, IntervalsClient, IntervalsClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
 from .training_tab import TrainingTab
@@ -29,10 +29,10 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1400, 800)
 
         self.current_activity: Optional[Activity] = None
-        self.strava_client = StravaClient()
+        self.activity_client = IntervalsClient()
         self.activity_metadatas: list[dict] = []
-        self.activity_map: dict[int, dict] = {}
-        self.activity_cache: dict[int, Activity] = {}
+        self.activity_map: dict[str, dict] = {}
+        self.activity_cache: dict[str, Activity] = {}
 
         self._init_ui()
         self._load_recent_activities()
@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout()
 
-        self._create_strava_controls(left_layout)
+        self._create_activity_sync_controls(left_layout)
         self._create_activity_selection(left_layout)
         self._create_metric_controls(left_layout)
 
@@ -78,14 +78,14 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(right_panel, 1)
         analysis_widget.setLayout(main_layout)
 
-        training_widget = TrainingTab(self.strava_client)
+        training_widget = TrainingTab(self.activity_client)
 
         tab_widget.addTab(analysis_widget, "Analysis")
         tab_widget.addTab(training_widget, "Training")
 
-    def _create_strava_controls(self, layout):
-        """Create Strava synchronization controls"""
-        label = QLabel("Strava Sync")
+    def _create_activity_sync_controls(self, layout):
+        """Create activity synchronization controls"""
+        label = QLabel("Activity Sync")
         label.setStyleSheet(LABEL_STYLE_HEADER)
         layout.addWidget(label)
 
@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
         self.activity_metadatas = []
 
         one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
-        activities = self.strava_client.list_activities(one_year_ago)
+        activities = self.activity_client.list_activities(one_year_ago)
 
         self.activity_metadatas = activities
 
@@ -189,7 +189,7 @@ class MainWindow(QMainWindow):
             duration_text = str(datetime.timedelta(seconds=activity.get('elapsed_time', 0))) if activity.get('elapsed_time') else 'N/A'
 
             date_item = QTableWidgetItem(date_text)
-            activity_id = int(activity.get('id'))
+            activity_id = activity.get('id')  # opaque id (e.g. intervals.icu's "i123456"), not necessarily numeric
             date_item.setData(Qt.ItemDataRole.UserRole, activity_id)
             self.table_activities.setItem(row, 0, date_item)
             self.table_activities.setItem(row, 1, QTableWidgetItem(distance_text))
@@ -209,11 +209,6 @@ class MainWindow(QMainWindow):
         if not activity_id:
             return
 
-        try:
-            activity_id = int(activity_id)
-        except (TypeError, ValueError):
-            return
-
         self._load_activity(activity_id)
 
     def _on_activity_table_selected(self, row, column):
@@ -230,7 +225,7 @@ class MainWindow(QMainWindow):
 
         self._load_activity(activity_id)
 
-    def _load_activity(self, activity_id: int):
+    def _load_activity(self, activity_id):
         metadata = self.activity_map.get(activity_id)
         if not metadata:
             return
@@ -239,9 +234,9 @@ class MainWindow(QMainWindow):
             self.current_activity = self.activity_cache[activity_id]
         else:
             try:
-                self.current_activity = self.strava_client.download_activity(activity_id)
+                self.current_activity = self.activity_client.download_activity(activity_id)
                 self.activity_cache[activity_id] = self.current_activity
-            except StravaClientError as e:
+            except IntervalsClientError as e:
                 QMessageBox.critical(self, "Download Error", f"Failed to download activity: {str(e)}")
                 return
 

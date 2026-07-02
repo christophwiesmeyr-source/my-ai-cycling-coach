@@ -36,35 +36,35 @@ class PlanGeneratorWorker(QThread):
 
 
 class PlanAdaptorWorker(QThread):
-    """Runs the agentic plan-adaptation loop against Strava data."""
+    """Runs the agentic plan-adaptation loop against recent activity data."""
 
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, strava_client):
+    def __init__(self, activity_client):
         super().__init__()
-        self.strava_client = strava_client
+        self.activity_client = activity_client
 
     def run(self):
         try:
-            plan = adapt_plan(self.strava_client)
+            plan = adapt_plan(self.activity_client)
             self.finished.emit(plan)
         except Exception as exc:
             self.error_occurred.emit(str(exc))
 
 
 class ChatWorker(QThread):
-    """Streams a coaching chat response, executing Strava tool calls as needed."""
+    """Streams a coaching chat response, executing activity-data tool calls as needed."""
 
     chunk_received = pyqtSignal(str)
     tool_status = pyqtSignal(str)
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, session: ChatSession, strava_client):
+    def __init__(self, session: ChatSession, activity_client):
         super().__init__()
         self.session = session
-        self.strava_client = strava_client
+        self.activity_client = activity_client
 
     def run(self):
         messages: list[Any] = list(self.session.history)
@@ -96,7 +96,7 @@ class ChatWorker(QThread):
                                 block.name, f"Using tool: {block.name}…"
                             )
                             self.tool_status.emit(status)
-                    results = execute_tools(final.content, self.strava_client)
+                    results = execute_tools(final.content, self.activity_client)
                     messages.append({"role": "user", "content": results})
                     continue
 

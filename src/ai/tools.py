@@ -1,10 +1,10 @@
-"""Tool schema definitions and execution for Strava data access"""
+"""Tool schema definitions and execution for activity data access"""
 import datetime
 import json
 
 import numpy as np
 
-from src.constants import STRAVA_HISTORY_WEEKS, GOALS_PATH
+from src.constants import ACTIVITY_HISTORY_WEEKS, GOALS_PATH
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
     elevation_changes,
@@ -23,7 +23,7 @@ TOOLS = [
     {
         "name": "list_recent_activities",
         "description": (
-            "List recent Strava activities with summary metadata: date, sport type, "
+            "List recent activities with summary metadata: date, sport type, "
             "distance, duration, average heart rate, and average power where available. "
             "Use this to get a broad overview of completed workouts before drilling into specifics."
         ),
@@ -33,7 +33,7 @@ TOOLS = [
                 "weeks": {
                     "type": "integer",
                     "description": "Number of weeks to look back. Defaults to 8, maximum 52.",
-                    "default": STRAVA_HISTORY_WEEKS,
+                    "default": ACTIVITY_HISTORY_WEEKS,
                 }
             },
             "required": [],
@@ -50,8 +50,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 }
             },
             "required": ["activity_id"],
@@ -68,8 +68,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 }
             },
             "required": ["activity_id"],
@@ -89,8 +89,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 }
             },
             "required": ["activity_id"],
@@ -108,8 +108,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 }
             },
             "required": ["activity_id"],
@@ -129,8 +129,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 }
             },
             "required": ["activity_id"],
@@ -148,8 +148,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "activity_id": {
-                    "type": "integer",
-                    "description": "The Strava activity ID.",
+                    "type": "string",
+                    "description": "The activity ID (as returned by list_recent_activities).",
                 },
             },
             "required": ["activity_id"],
@@ -159,8 +159,8 @@ TOOLS = [
 
 # Human-readable status messages shown in the UI while a tool call is in flight
 TOOL_STATUS_MESSAGES = {
-    "list_recent_activities": "Fetching your recent Strava activities…",
-    "get_activity_details": "Loading activity details from Strava…",
+    "list_recent_activities": "Fetching your recent activities…",
+    "get_activity_details": "Loading activity details…",
     "get_activity_power_curve": "Computing power curve…",
     "get_activity_training_load": "Computing training load…",
     "get_activity_efficiency": "Analysing pacing and efficiency…",
@@ -195,40 +195,40 @@ _HR_ZONES = [
 ]
 
 
-def execute_tools(content: list, strava_client) -> list:
+def execute_tools(content: list, activity_client) -> list:
     """Execute all tool-use blocks in an assistant response and return tool results."""
     results = []
     for block in content:
         if not hasattr(block, "type") or block.type != "tool_use":
             continue
-        output = _execute_tool(block, strava_client)
+        output = _execute_tool(block, activity_client)
         results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
     return results
 
 
-def _execute_tool(block, strava_client) -> str:
+def _execute_tool(block, activity_client) -> str:
     if block.name == "list_recent_activities":
-        weeks = block.input.get("weeks", STRAVA_HISTORY_WEEKS)
-        return _list_activities(strava_client, weeks)
+        weeks = block.input.get("weeks", ACTIVITY_HISTORY_WEEKS)
+        return _list_activities(activity_client, weeks)
     if block.name == "get_activity_details":
-        return _get_activity_details(strava_client, int(block.input["activity_id"]))
+        return _get_activity_details(activity_client, block.input["activity_id"])
     if block.name == "get_activity_power_curve":
-        return _get_activity_power_curve(strava_client, int(block.input["activity_id"]))
+        return _get_activity_power_curve(activity_client, block.input["activity_id"])
     if block.name == "get_activity_training_load":
-        return _get_activity_training_load(strava_client, int(block.input["activity_id"]))
+        return _get_activity_training_load(activity_client, block.input["activity_id"])
     if block.name == "get_activity_efficiency":
-        return _get_activity_efficiency(strava_client, int(block.input["activity_id"]))
+        return _get_activity_efficiency(activity_client, block.input["activity_id"])
     if block.name == "get_activity_intervals":
-        return _get_activity_intervals(strava_client, int(block.input["activity_id"]))
+        return _get_activity_intervals(activity_client, block.input["activity_id"])
     if block.name == "get_activity_zones":
-        return _get_activity_zones(strava_client, int(block.input["activity_id"]))
+        return _get_activity_zones(activity_client, block.input["activity_id"])
     return f"Unknown tool: {block.name}"
 
 
-def _list_activities(strava_client, weeks: int) -> str:
+def _list_activities(activity_client, weeks: int) -> str:
     weeks = min(max(weeks, 1), 52)
     after = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(weeks=weeks)
-    activities = strava_client.list_activities(after)
+    activities = activity_client.list_activities(after)
 
     if not activities:
         return f"No activities found in the last {weeks} weeks."
@@ -267,9 +267,9 @@ def _load_goals() -> dict:
         return {}
 
 
-def _get_activity_details(strava_client, activity_id: int) -> str:
+def _get_activity_details(activity_client, activity_id) -> str:
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
@@ -293,7 +293,7 @@ def _get_activity_details(strava_client, activity_id: int) -> str:
         lines.append(f"  Moving: {_fmt_duration(times['moving_s'])}")
         lines.append(f"  Stopped: {_fmt_duration(times['stopped_s'])}{stop_note}")
     else:
-        lines.append("  Moving: unavailable (no moving stream from Strava)")
+        lines.append("  Moving: unavailable (no moving stream from data source)")
 
     # Elevation
     ascent, descent = elevation_changes(activity.get_time_series("altitude"), time_array)
@@ -367,9 +367,9 @@ def _get_activity_details(strava_client, activity_id: int) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_power_curve(strava_client, activity_id: int) -> str:
+def _get_activity_power_curve(activity_client, activity_id) -> str:
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
@@ -390,9 +390,9 @@ def _get_activity_power_curve(strava_client, activity_id: int) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_training_load(strava_client, activity_id: int) -> str:
+def _get_activity_training_load(activity_client, activity_id) -> str:
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
@@ -459,9 +459,9 @@ def _moving_halves(time_array, mask):
     return active & (cum <= half), active & (cum > half)
 
 
-def _get_activity_efficiency(strava_client, activity_id: int) -> str:
+def _get_activity_efficiency(activity_client, activity_id) -> str:
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
@@ -510,9 +510,9 @@ def _get_activity_efficiency(strava_client, activity_id: int) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_intervals(strava_client, activity_id: int) -> str:
+def _get_activity_intervals(activity_client, activity_id) -> str:
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 
@@ -599,7 +599,7 @@ def _zone_breakdown(series, zones, reference, dt: float) -> list:
     return lines
 
 
-def _get_activity_zones(strava_client, activity_id: int) -> str:
+def _get_activity_zones(activity_client, activity_id) -> str:
     try:
         goals = json.loads(GOALS_PATH.read_text())
     except Exception:
@@ -612,7 +612,7 @@ def _get_activity_zones(strava_client, activity_id: int) -> str:
         return "Neither FTP nor max heart rate is set in Training Goals. At least one is required."
 
     try:
-        activity = strava_client.download_activity(activity_id)
+        activity = activity_client.download_activity(activity_id)
     except Exception as exc:
         return f"Failed to download activity {activity_id}: {exc}"
 

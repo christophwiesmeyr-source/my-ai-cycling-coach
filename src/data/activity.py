@@ -93,6 +93,6 @@ class Activity:
     @property
     def available_metrics(self) -> list[str]:
         """Get list of available data metrics"""
-        # 'moving' is Strava's boolean flag, not a plottable measurement.
+        # 'moving' is a boolean flag from the data source, not a plottable measurement.
         exclude = {'timestamp', 'moving'}
         return [col for col in self.data.columns if col not in exclude]

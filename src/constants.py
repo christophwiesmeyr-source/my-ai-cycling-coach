@@ -7,7 +7,7 @@ _test_mode = "--test" in sys.argv
 APP_DIR = Path.home() / (".my-ai-cycling-coach-test" if _test_mode else ".my-ai-cycling-coach")
 
 # Persisted file paths
-STRAVA_TOKENS_PATH = APP_DIR / "strava_tokens.json"
+INTERVALS_CONFIG_PATH = APP_DIR / "intervals_config.json"
 CLAUDE_API_KEY_PATH = APP_DIR / "claude_api_key"
 PLAN_ORIGINAL_PATH = APP_DIR / "plan_original.md"
 PLAN_ADAPTED_PATH = APP_DIR / "plan_adapted.md"
@@ -19,5 +19,5 @@ GOALS_PATH = APP_DIR / "goals.json"
 # AI settings
 AI_MODEL = "claude-sonnet-5"
 
-# Strava history window used by the plan adaptor agent
-STRAVA_HISTORY_WEEKS = 8
+# Activity history window used by the plan adaptor agent and coach chat
+ACTIVITY_HISTORY_WEEKS = 8

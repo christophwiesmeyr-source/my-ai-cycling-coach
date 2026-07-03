@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
+from src.logging_setup import configure_logging
 from src.ui import MainWindow
 
 _ICON_PATH = Path(__file__).parent / "assets" / "icon.svg"
@@ -13,6 +14,7 @@ _ICON_PATH = Path(__file__).parent / "assets" / "icon.svg"
 
 def main():
     """Run the application"""
+    configure_logging()
     app = QApplication(sys.argv)
     app.setDesktopFileName("my-ai-cycling-coach")
     app.styleHints().setColorScheme(Qt.ColorScheme.Light)

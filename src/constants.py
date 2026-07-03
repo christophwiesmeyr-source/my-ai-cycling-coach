@@ -15,6 +15,7 @@ SESSIONS_ORIGINAL_PATH = APP_DIR / "sessions_original.csv"
 SESSIONS_ADAPTED_PATH = APP_DIR / "sessions_adapted.csv"
 SESSIONS_LOG_PATH = APP_DIR / "sessions_log.json"
 GOALS_PATH = APP_DIR / "goals.json"
+LOG_PATH = APP_DIR / "app.log"
 
 # AI settings
 AI_MODEL = "claude-sonnet-5"

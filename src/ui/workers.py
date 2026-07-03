@@ -1,4 +1,5 @@
 """Background QThread workers for AI operations — keeps the UI responsive"""
+import logging
 from typing import Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -9,6 +10,8 @@ from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
 from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
 from src.constants import AI_MODEL
+
+logger = logging.getLogger(__name__)
 
 
 class PlanGeneratorWorker(QThread):
@@ -85,8 +88,15 @@ class ChatWorker(QThread):
                         self.chunk_received.emit(text)
                     final = stream.get_final_message()
 
-                if final.stop_reason == "end_turn":
-                    break
+                usage = final.usage
+                logger.info(
+                    "chat turn stop_reason=%s input_tokens=%s output_tokens=%s "
+                    "cache_creation=%s cache_read=%s",
+                    final.stop_reason, usage.input_tokens, usage.output_tokens,
+                    getattr(usage, "cache_creation_input_tokens", None),
+                    getattr(usage, "cache_read_input_tokens", None),
+                )
+                logger.debug("chat turn full response so far: %r", full_response)
 
                 if final.stop_reason == "tool_use":
                     messages.append({"role": "assistant", "content": final.content})
@@ -100,8 +110,14 @@ class ChatWorker(QThread):
                     messages.append({"role": "user", "content": results})
                     continue
 
+                if final.stop_reason != "end_turn":
+                    logger.warning(
+                        "chat turn ended on unhandled stop_reason=%s — response may be truncated",
+                        final.stop_reason,
+                    )
                 break
 
             self.finished.emit(full_response)
         except Exception as exc:
+            logger.exception("chat worker failed")
             self.error_occurred.emit(str(exc))

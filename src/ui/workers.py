@@ -78,7 +78,7 @@ class ChatWorker(QThread):
             while True:
                 with client.messages.stream(
                     model=AI_MODEL,
-                    max_tokens=2048,
+                    max_tokens=8192,
                     system=self.session.build_system(),
                     tools=TOOLS,
                     messages=messages,

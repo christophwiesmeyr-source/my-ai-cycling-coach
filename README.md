@@ -29,6 +29,12 @@ From the project directory, run the setup script:
 
 This creates a virtual environment, installs dependencies, and registers the app as a desktop entry (icon + launcher).
 
+For development (adds `pytest`, `ruff`, `mypy`, etc.), pass `--dev`:
+
+```bash
+./setup.sh --dev
+```
+
 ## Authentication
 
 ### intervals.icu

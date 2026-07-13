@@ -1,0 +1,41 @@
+# Project My AI Cycling Coach
+
+Standalone Desktop application to generate training plans and monitor progress using Anthropic API (Sonnet 5).
+
+## Readme
+
+The README.md file contains all information regarding setup.
+
+## Commands
+
+- `pytest` — run all tests
+- `ruff check .` — lint
+- `ruff format .` — format code
+- `mypy src/` — type checking
+
+## Project Structure
+
+- `src/` - Application source code
+    - `ai/` - Code for AI agentic workflows
+    - `analysis/` - Computation of metrics/statistics, signal processing tooling
+    - `data/` - Data layer and connection to intervals.icu
+    - `ui/` - Qt UI code
+- `interval_detection` - Standalone Python package for interval detection with its own test bench (imported by the main application)
+- `assets`- Assets used by App
+- `tests`- Test bench for App
+
+## Coding Conventions
+
+- Type hints on all function signatures - parameters and return types
+- f-strings for string formatting instead of format
+- Logging: Root logger is set up in `src/logging_setup.py`, use logger = logging.getLogger(__name__) if logging required.
+- Do not use `print()` statements, use the logger; Exception: Standalone scripts which benefit from direct feedback through command line
+- Do not use `*` imports
+
+## Git
+
+- Commits are done manually
+- Releases are on the `main` branch, development should be in release branches
+- Release branches are named `release/vN` (e.g. `release/v4`), the version number is fixed when the branch is opened
+- Best practice for features is to branch off of the release branch
+- All merges to `main` get a version tag (`v1`, `v2`, `v3`, ...) matching the release branch name. Note that this convention starts with the `v1` tag.

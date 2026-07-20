@@ -7,6 +7,7 @@ implemented so a live smoke test has a clear diff to compare against, and so
 the mapping doesn't silently drift once it *is* verified.
 """
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -15,21 +16,21 @@ from src.data.intervals_api import IntervalsClient, IntervalsClientError
 
 
 @pytest.fixture
-def mock_client(tmp_path):
+def mock_client(tmp_path: Path) -> IntervalsClient:
     config = tmp_path / "intervals_config.json"
     with patch.object(IntervalsClient, "CONFIG_FILE", config):
         return IntervalsClient(api_key="testkey", athlete_id="i12345")
 
 
 class TestInit:
-    def test_uses_explicit_credentials(self, tmp_path):
+    def test_uses_explicit_credentials(self, tmp_path: Path) -> None:
         with patch.object(IntervalsClient, "CONFIG_FILE", tmp_path / "missing.json"):
             client = IntervalsClient(api_key="k", athlete_id="i1")
         assert client.api_key == "k"
         assert client.athlete_id == "i1"
         assert client.auth == ("API_KEY", "k")
 
-    def test_loads_credentials_from_config_file(self, tmp_path):
+    def test_loads_credentials_from_config_file(self, tmp_path: Path) -> None:
         config = tmp_path / "intervals_config.json"
         config.write_text('{"api_key": "filekey", "athlete_id": "i999"}')
         with patch.object(IntervalsClient, "CONFIG_FILE", config):
@@ -37,7 +38,7 @@ class TestInit:
         assert client.api_key == "filekey"
         assert client.athlete_id == "i999"
 
-    def test_explicit_args_override_config_file(self, tmp_path):
+    def test_explicit_args_override_config_file(self, tmp_path: Path) -> None:
         config = tmp_path / "intervals_config.json"
         config.write_text('{"api_key": "filekey", "athlete_id": "i999"}')
         with patch.object(IntervalsClient, "CONFIG_FILE", config):
@@ -45,14 +46,14 @@ class TestInit:
         assert client.api_key == "override"
         assert client.athlete_id == "i999"  # falls back to config
 
-    def test_missing_credentials_raises_with_setup_hint(self, tmp_path):
+    def test_missing_credentials_raises_with_setup_hint(self, tmp_path: Path) -> None:
         with patch.object(IntervalsClient, "CONFIG_FILE", tmp_path / "missing.json"):
             with pytest.raises(IntervalsClientError, match="Developer Settings"):
                 IntervalsClient()
 
 
 class TestListActivities:
-    def test_success_normalizes_and_uses_basic_auth(self, mock_client):
+    def test_success_normalizes_and_uses_basic_auth(self, mock_client: IntervalsClient) -> None:
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = [{
             "id": "i67890",
@@ -82,7 +83,7 @@ class TestListActivities:
         assert "athlete/i12345/activities" in mock_get.call_args[0][0]
         assert kwargs["params"]["oldest"] == "2026-01-01T00:00:00"
 
-    def test_falls_back_to_icu_prefixed_and_alt_keys(self, mock_client):
+    def test_falls_back_to_icu_prefixed_and_alt_keys(self, mock_client: IntervalsClient) -> None:
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = [{
             "id": "i1",
@@ -97,13 +98,13 @@ class TestListActivities:
         assert a["sport_type"] == "VirtualRide"
         assert a["average_watts"] == 180
 
-    def test_http_error_raises(self, mock_client):
+    def test_http_error_raises(self, mock_client: IntervalsClient) -> None:
         mock_response = Mock(status_code=403, text="Forbidden")
         with patch("requests.get", return_value=mock_response):
             with pytest.raises(IntervalsClientError, match="403"):
                 mock_client.list_activities(datetime(2026, 1, 1))
 
-    def test_network_error_raises(self, mock_client):
+    def test_network_error_raises(self, mock_client: IntervalsClient) -> None:
         import requests
         with patch("requests.get", side_effect=requests.RequestException("boom")):
             with pytest.raises(IntervalsClientError, match="boom"):
@@ -111,7 +112,7 @@ class TestListActivities:
 
 
 class TestDownloadActivity:
-    def _streams(self, n=5):
+    def _streams(self, n: int = 5) -> list[dict]:
         return [
             {"type": "time", "data": list(range(n))},
             {"type": "watts", "data": [200] * n},
@@ -122,7 +123,7 @@ class TestDownloadActivity:
             {"type": "velocity_smooth", "data": [8.0] * n},
         ]
 
-    def test_builds_activity_with_all_streams(self, mock_client):
+    def test_builds_activity_with_all_streams(self, mock_client: IntervalsClient) -> None:
         metadata = {
             "start_date_local": "2026-06-01T10:00:00",
             "type": "Ride",
@@ -144,7 +145,7 @@ class TestDownloadActivity:
         assert list(activity.get_time_series("cadence")) == [85] * 5
         assert list(activity.get_time_series("speed")) == [8.0] * 5
 
-    def test_missing_time_stream_raises(self, mock_client):
+    def test_missing_time_stream_raises(self, mock_client: IntervalsClient) -> None:
         metadata = {"start_date_local": "2026-06-01T10:00:00", "type": "Ride"}
         responses = [Mock(status_code=200, json=Mock(return_value=metadata)),
                     Mock(status_code=200, json=Mock(return_value=[{"type": "watts", "data": [1, 2]}]))]
@@ -152,14 +153,14 @@ class TestDownloadActivity:
             with pytest.raises(IntervalsClientError, match="No time stream"):
                 mock_client.download_activity("i1")
 
-    def test_missing_start_time_raises(self, mock_client):
+    def test_missing_start_time_raises(self, mock_client: IntervalsClient) -> None:
         responses = [Mock(status_code=200, json=Mock(return_value={})),
                     Mock(status_code=200, json=Mock(return_value=self._streams()))]
         with patch("requests.get", side_effect=responses):
             with pytest.raises(IntervalsClientError, match="missing start time"):
                 mock_client.download_activity("i1")
 
-    def test_detail_http_error_raises(self, mock_client):
+    def test_detail_http_error_raises(self, mock_client: IntervalsClient) -> None:
         with patch("requests.get", return_value=Mock(status_code=404, text="not found")):
             with pytest.raises(IntervalsClientError, match="404"):
                 mock_client.download_activity("i1")

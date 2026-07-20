@@ -23,6 +23,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any, Callable, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import labelio  # noqa: E402
@@ -39,22 +40,24 @@ BOUNDARY_TOL_S = 2.0
 MIN_INTERVAL_S = 60.0
 
 
-def _overlap(a, b) -> float:
+def _overlap(a: tuple[float, float], b: tuple[float, float]) -> float:
     return max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
 
 
-def coverage(pred, gt) -> float:
+def coverage(pred: tuple[float, float], gt: tuple[float, float]) -> float:
     """Fraction of the GT interval covered by the prediction."""
     length = gt[1] - gt[0]
     return _overlap(pred, gt) / length if length > 0 else 0.0
 
 
-def boundary_error(pred, gt) -> float:
+def boundary_error(pred: tuple[float, float], gt: tuple[float, float]) -> float:
     """Absolute boundary error |Δstart| + |Δend| for a matched pair."""
     return abs(pred[0] - gt[0]) + abs(pred[1] - gt[1])
 
 
-def match(preds, gts, threshold: float = COVERAGE_THRESHOLD):
+def match(
+    preds: list[tuple[float, float]], gts: list[tuple[float, float]], threshold: float = COVERAGE_THRESHOLD
+) -> tuple[list[tuple[int, int]], list[int], list[int]]:
     """Lenient coverage matching.
 
     Returns ``(tp_pairs, fp, fn)`` where ``tp_pairs`` is a list of
@@ -100,7 +103,7 @@ def match(preds, gts, threshold: float = COVERAGE_THRESHOLD):
     return tp_pairs, sorted(fp), sorted(fn)
 
 
-def score(preds, gts, threshold: float = COVERAGE_THRESHOLD) -> dict:
+def score(preds: list[tuple[float, float]], gts: list[tuple[float, float]], threshold: float = COVERAGE_THRESHOLD) -> dict:
     """Per-activity counts and boundary errors for matched pairs."""
     tp_pairs, fp, fn = match(preds, gts, threshold)
     return {
@@ -116,7 +119,7 @@ def score(preds, gts, threshold: float = COVERAGE_THRESHOLD) -> dict:
 # Aggregation
 # --------------------------------------------------------------------------- #
 
-def _prf(tp, fp, fn):
+def _prf(tp: int, fp: int, fn: int) -> tuple[Optional[float], Optional[float], Optional[float]]:
     precision = tp / (tp + fp) if (tp + fp) else None
     recall = tp / (tp + fn) if (tp + fn) else None
     if precision is None or recall is None:
@@ -128,7 +131,7 @@ def _prf(tp, fp, fn):
     return precision, recall, f1
 
 
-def _bstats(values):
+def _bstats(values: Sequence[float]) -> dict:
     if not values:
         return {"mean": None, "median": None, "n": 0, "values": []}
     return {
@@ -139,7 +142,7 @@ def _bstats(values):
     }
 
 
-def _signed_boundary(dstart, dend, tol: float = BOUNDARY_TOL_S):
+def _signed_boundary(dstart: Sequence[float], dend: Sequence[float], tol: float = BOUNDARY_TOL_S) -> Optional[dict]:
     """Signed boundary behaviour over matched pairs (pred - GT).
 
     Positive = late: a late start clips into the rep; a late end runs into the
@@ -149,7 +152,7 @@ def _signed_boundary(dstart, dend, tol: float = BOUNDARY_TOL_S):
     if not dstart:
         return None
 
-    def split(vals):
+    def split(vals: Sequence[float]) -> dict:
         late = sum(1 for v in vals if v > tol)
         early = sum(1 for v in vals if v < -tol)
         return {"mean": statistics.fmean(vals), "median": statistics.median(vals),
@@ -166,7 +169,7 @@ def _signed_boundary(dstart, dend, tol: float = BOUNDARY_TOL_S):
     }
 
 
-def _summary(counts, boundary):
+def _summary(counts: dict, boundary: Optional[Sequence[float]]) -> dict:
     precision, recall, f1 = _prf(counts["tp"], counts["fp"], counts["fn"])
     out = {**counts, "precision": precision, "recall": recall, "f1": f1}
     if boundary is not None:
@@ -174,7 +177,7 @@ def _summary(counts, boundary):
     return out
 
 
-def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
+def evaluate(predict: Optional[Callable] = None, ftp: float = ATHLETE_FTP, activity_ids: Optional[list] = None,
              activities_dir: Path = labelio.ACTIVITIES_DIR,
              labels_dir: Path = labelio.LABELS_DIR,
              threshold: float = COVERAGE_THRESHOLD,
@@ -188,7 +191,7 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
     than ``min_gt_duration_s`` are out of the operating envelope and excluded.
     """
     if predict is None:
-        def predict(_aid, t, power):
+        def predict(_aid: str, t: Any, power: Any) -> list:
             return detect_intervals(t, power, ftp=ftp)
 
     ids = activity_ids if activity_ids is not None else labelio.list_activity_ids(activities_dir)
@@ -255,17 +258,17 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
 # Reporting
 # --------------------------------------------------------------------------- #
 
-def _fmt(x, pct=False):
+def _fmt(x: Optional[float], pct: bool = False) -> str:
     if x is None:
         return "  n/a"
     return f"{100 * x:5.1f}%" if pct else f"{x:6.1f}"
 
 
-def _secs(x):
+def _secs(x: Optional[float]) -> str:
     return "n/a" if x is None else f"{x:.1f}s"
 
 
-def _bin_counts(values, step: float, upto: float):
+def _bin_counts(values: Sequence[float], step: float, upto: float) -> tuple[list[int], int]:
     """Counts of values in [0, step), [step, 2*step), ... up to `upto`, + overflow."""
     n_bins = int(round(upto / step))
     counts = [0] * n_bins
@@ -278,7 +281,7 @@ def _bin_counts(values, step: float, upto: float):
     return counts, overflow
 
 
-def _fine_histogram(values, step: float = 3.0, upto: float = 42.0, width: int = 40) -> str:
+def _fine_histogram(values: Sequence[float], step: float = 3.0, upto: float = 42.0, width: int = 40) -> str:
     """Fine-grained histogram zooming into small boundary errors (the ones that
     still matter — even a sub-bucket error skews the interval's averaged stats)."""
     if not values:
@@ -294,7 +297,7 @@ def _fine_histogram(values, step: float = 3.0, upto: float = 42.0, width: int = 
     return "\n".join(lines)
 
 
-def _text_histogram(values, bins: int = 10, width: int = 40) -> str:
+def _text_histogram(values: Sequence[float], bins: int = 10, width: int = 40) -> str:
     if not values:
         return "  (no matched intervals)"
     lo, hi = min(values), max(values)
@@ -361,7 +364,7 @@ def format_report(report: dict) -> str:
     return "\n".join(lines)
 
 
-def plot_boundary_histogram(values, path=None, bins: int = 20):
+def plot_boundary_histogram(values: Sequence[float], path: Optional[Path] = None, bins: int = 20) -> Any:
     """Optional matplotlib histogram (requires the `bench` extra)."""
     import matplotlib
     if path is not None:
@@ -377,7 +380,7 @@ def plot_boundary_histogram(values, path=None, bins: int = 20):
     return fig
 
 
-def main():
+def main() -> int:
     print(format_report(evaluate()))
     return 0
 

@@ -93,13 +93,13 @@ class IntervalsClient:
             "trainer": bool(raw.get("trainer")),
         }
 
-    def download_activity(self, activity_id) -> Activity:
+    def download_activity(self, activity_id: str) -> Activity:
         """Download a single activity and convert it to an Activity object."""
         metadata = self._get_activity_detail(activity_id)
         streams = self._get_activity_streams(activity_id)
         return self._build_activity(metadata, streams)
 
-    def _get_activity_detail(self, activity_id) -> Dict[str, Any]:
+    def _get_activity_detail(self, activity_id: str) -> Dict[str, Any]:
         try:
             response = requests.get(
                 f"{self.BASE_URL}/activity/{activity_id}",
@@ -114,7 +114,7 @@ class IntervalsClient:
             )
         return response.json()
 
-    def _get_activity_streams(self, activity_id) -> List[Dict[str, Any]]:
+    def _get_activity_streams(self, activity_id: str) -> List[Dict[str, Any]]:
         try:
             response = requests.get(
                 f"{self.BASE_URL}/activity/{activity_id}/streams.json",

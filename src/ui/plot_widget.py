@@ -16,7 +16,7 @@ class PlotWidget(pg.GraphicsLayoutWidget):
     # Signal emitted when a time range is selected
     selection_changed = pyqtSignal(int, int)  # start_idx, end_idx
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent=parent)
         
         self.current_activity: Optional[Activity] = None
@@ -53,13 +53,13 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         # Connect selection change
         self.selection_region.sigRegionChangeFinished.connect(self._on_selection_changed)
     
-    def _update_views(self):
+    def _update_views(self) -> None:
         """Keep secondary view geometry and axis sync with primary plot"""
         self.secondary_view.setGeometry(self.plot.getViewBox().sceneBoundingRect())
         self.secondary_view.linkedViewChanged(self.plot.getViewBox(), self.secondary_view.XAxis)
     
-    def plot_activity(self, activity: Activity, primary_metric: Optional[str], secondary_metric: Optional[str], 
-                     primary_filtered: bool = False, secondary_filtered: bool = False):
+    def plot_activity(self, activity: Activity, primary_metric: Optional[str], secondary_metric: Optional[str],
+                     primary_filtered: bool = False, secondary_filtered: bool = False) -> None:
         """
         Plot activity data
         
@@ -123,7 +123,7 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         self.plot.autoRange()
         self.secondary_view.autoRange()
 
-    def _on_selection_changed(self):
+    def _on_selection_changed(self) -> None:
         """Handle selection region change"""
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
@@ -147,7 +147,7 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         
         self.selection_changed.emit(start_idx, end_idx)
     
-    def reset_view(self):
+    def reset_view(self) -> None:
         """Reset plot to show all data"""
         if not self.current_activity or len(self.current_activity.data) == 0:
             return

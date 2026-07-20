@@ -10,6 +10,7 @@ from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
 from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
 from src.constants import AI_MODEL
+from src.data.intervals_api import IntervalsClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class PlanGeneratorWorker(QThread):
         super().__init__()
         self.goals = goals
 
-    def run(self):
+    def run(self) -> None:
         try:
             self.status_update.emit("Generating training plan…")
             plan = generate_plan(self.goals)
@@ -44,11 +45,11 @@ class PlanAdaptorWorker(QThread):
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, activity_client):
+    def __init__(self, activity_client: IntervalsClient):
         super().__init__()
         self.activity_client = activity_client
 
-    def run(self):
+    def run(self) -> None:
         try:
             plan = adapt_plan(self.activity_client)
             self.finished.emit(plan)
@@ -64,12 +65,12 @@ class ChatWorker(QThread):
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, session: ChatSession, activity_client):
+    def __init__(self, session: ChatSession, activity_client: IntervalsClient):
         super().__init__()
         self.session = session
         self.activity_client = activity_client
 
-    def run(self):
+    def run(self) -> None:
         messages: list[Any] = list(self.session.history)
         client = get_client()
         full_response = ""

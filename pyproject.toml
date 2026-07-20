@@ -1,4 +1,5 @@
 [tool.mypy]
+disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = "pyqtgraph.*"

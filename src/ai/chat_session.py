@@ -70,13 +70,13 @@ def _build_session_table() -> str:
 
 
 class ChatSession:
-    def __init__(self):
+    def __init__(self) -> None:
         self.history: list = []
         self.original_plan: str = ""
         self.adapted_plan: str = ""
         self.reload_plans()
 
-    def reload_plans(self):
+    def reload_plans(self) -> None:
         """Re-read plan files from disk (call after generating or adapting a plan).
 
         Clears the in-memory copy when a file is absent, so a plan deleted on
@@ -86,10 +86,10 @@ class ChatSession:
         self.original_plan = PLAN_ORIGINAL_PATH.read_text() if PLAN_ORIGINAL_PATH.exists() else ""
         self.adapted_plan = PLAN_ADAPTED_PATH.read_text() if PLAN_ADAPTED_PATH.exists() else ""
 
-    def add_user_message(self, text: str):
+    def add_user_message(self, text: str) -> None:
         self.history.append({"role": "user", "content": text})
 
-    def add_assistant_message(self, text: str):
+    def add_assistant_message(self, text: str) -> None:
         self.history.append({"role": "assistant", "content": text})
 
     def build_system(self) -> list:

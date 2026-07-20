@@ -20,6 +20,7 @@ the usual zoom/pan/save). q quits.
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, Optional, Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -34,9 +35,9 @@ from interval_detection import detect_intervals, moving_average  # noqa: E402
 from interval_detection.detector import FTP_FRACTION  # noqa: E402
 
 
-def result_for_activity(aid, ftp=evaluate.ATHLETE_FTP,
-                        activities_dir=labelio.ACTIVITIES_DIR,
-                        labels_dir=labelio.LABELS_DIR) -> dict:
+def result_for_activity(aid: str, ftp: float = evaluate.ATHLETE_FTP,
+                        activities_dir: Path = labelio.ACTIVITIES_DIR,
+                        labels_dir: Path = labelio.LABELS_DIR) -> dict:
     """Everything needed to plot one activity's detection result (no I/O side effects)."""
     t, p = labelio.load_activity_csv(aid, activities_dir)
     ann = labelio.load_annotation(aid, labels_dir)
@@ -55,7 +56,7 @@ def result_for_activity(aid, ftp=evaluate.ATHLETE_FTP,
     }
 
 
-def plot_activity(r: dict, ax):
+def plot_activity(r: dict, ax: Any) -> None:
     ax.clear()
     ax.plot(r["t"], r["p"], color="0.8", lw=0.6, label="power")
     ax.plot(r["t"], r["smoothed"], color="tab:blue", lw=1.1, label="power (20 s)")
@@ -63,7 +64,7 @@ def plot_activity(r: dict, ax):
 
     trans = blended_transform_factory(ax.transData, ax.transAxes)
 
-    def bar(s, e, y, color):
+    def bar(s: float, e: float, y: float, color: str) -> None:
         ax.add_patch(Rectangle((s, y), e - s, 0.05, transform=trans, color=color, alpha=0.75))
 
     for s, e, _ in r["excluded"]:                      # out-of-scope GT, for context
@@ -86,7 +87,7 @@ def plot_activity(r: dict, ax):
 
 
 class Viewer:
-    def __init__(self, ids, results):
+    def __init__(self, ids: list, results: dict):
         self.ids, self.results, self.idx = ids, results, 0
         self.fig, self.ax = plt.subplots(figsize=(14, 6))
         self.fig.subplots_adjust(bottom=0.16)
@@ -98,24 +99,24 @@ class Viewer:
         self.fig.canvas.mpl_connect("key_press_event", self._on_key)
         self._draw()
 
-    def _step(self, delta):
+    def _step(self, delta: int) -> None:
         self.idx = (self.idx + delta) % len(self.ids)
         self._draw()
 
-    def _draw(self):
+    def _draw(self) -> None:
         plot_activity(self.results[self.ids[self.idx]], self.ax)
         self.fig.suptitle(f"[{self.idx + 1}/{len(self.ids)}]   ←/→ or Prev/Next to navigate",
                           fontsize=9)
         self.fig.canvas.draw_idle()
 
-    def _on_key(self, event):
+    def _on_key(self, event: Any) -> None:
         if event.key in ("right", "n"):
             self._step(+1)
         elif event.key in ("left", "p"):
             self._step(-1)
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("activity", nargs="?", help="activity id to start at")
     ap.add_argument("--order", choices=["worst", "id"], default="worst")

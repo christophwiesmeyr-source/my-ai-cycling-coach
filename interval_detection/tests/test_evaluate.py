@@ -1,6 +1,7 @@
 """Tests for the evaluation harness (pinned cases + integration)."""
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 import pytest
 
@@ -34,20 +35,20 @@ CASES = [
 
 @pytest.mark.parametrize("label,preds,gts,tp,fp,fn,berr",
                          CASES, ids=[c[0] for c in CASES])
-def test_pinned_cases(label, preds, gts, tp, fp, fn, berr):
+def test_pinned_cases(label: str, preds: list, gts: list, tp: int, fp: int, fn: int, berr: list) -> None:
     result = evaluate.score(preds, gts)
     assert (result["tp"], result["fp"], result["fn"]) == (tp, fp, fn)
     assert sorted(result["boundary_errors"]) == berr
 
 
-def test_coverage_and_boundary_helpers():
+def test_coverage_and_boundary_helpers() -> None:
     assert evaluate.coverage((0, 300), (0, 600)) == 0.5
     assert evaluate.coverage((0, 600), (0, 600)) == 1.0
     assert evaluate.coverage((700, 800), (0, 600)) == 0.0
     assert evaluate.boundary_error((150, 720), (100, 700)) == 70
 
 
-def test_prf_edge_cases():
+def test_prf_edge_cases() -> None:
     assert evaluate._prf(0, 0, 0) == (None, None, None)   # nothing happened
     assert evaluate._prf(0, 0, 2)[1] == 0.0               # recall 0 with FN
     p, r, f = evaluate._prf(3, 1, 1)
@@ -59,12 +60,12 @@ def test_prf_edge_cases():
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture
-def bench(tmp_path):
+def bench(tmp_path: Path) -> tuple[Path, Path]:
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"
     acts.mkdir()
 
-    def write_activity(aid, n):
+    def write_activity(aid: str, n: int) -> None:
         (acts / f"{aid}.csv").write_text(
             "t,power\n" + "\n".join(f"{i},200" for i in range(n)) + "\n"
         )
@@ -84,13 +85,13 @@ def bench(tmp_path):
     return acts, labs
 
 
-def _gt_predict(labs):
-    def predict(aid, t, power):
+def _gt_predict(labs: Path) -> Callable:
+    def predict(aid: str, t: Any, power: Any) -> list:
         return labelio.load_annotation(aid, labels_dir=labs)["intervals"] or []
     return predict
 
 
-def test_oracle_scores_perfect(bench):
+def test_oracle_scores_perfect(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     rep = evaluate.evaluate(predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs)
     assert rep["n_activities"] == 2  # U skipped
@@ -100,10 +101,10 @@ def test_oracle_scores_perfect(bench):
     assert rep["by_type"]["vo2max"]["recall"] == 1.0
 
 
-def test_jittered_oracle_boundary_error(bench):
+def test_jittered_oracle_boundary_error(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
 
-    def predict(aid, t, power):
+    def predict(aid: str, t: Any, power: Any) -> list:
         return [(s + 10, e + 10) for s, e, _ in
                 (labelio.load_annotation(aid, labels_dir=labs)["intervals"] or [])]
 
@@ -112,7 +113,7 @@ def test_jittered_oracle_boundary_error(bench):
     assert rep["overall"]["boundary"]["mean"] == 20.0  # |10| + |10|
 
 
-def test_empty_detector_is_zero_recall(bench):
+def test_empty_detector_is_zero_recall(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     rep = evaluate.evaluate(activities_dir=acts, labels_dir=labs)  # default detect_intervals -> []
     assert rep["overall"]["recall"] == 0.0
@@ -120,10 +121,10 @@ def test_empty_detector_is_zero_recall(bench):
     assert rep["overall"]["fn"] == 2
 
 
-def test_merge_rule_blocks_whole_ride_gaming(bench):
+def test_merge_rule_blocks_whole_ride_gaming(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
 
-    def predict(aid, t, power):
+    def predict(aid: str, t: Any, power: Any) -> list:
         return [(0, 1500)] if aid == "A" else []
 
     rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
@@ -133,21 +134,22 @@ def test_merge_rule_blocks_whole_ride_gaming(bench):
     assert rep["overall"]["fn"] == 2 and rep["overall"]["fp"] == 1
 
 
-def test_signed_boundary_directions():
+def test_signed_boundary_directions() -> None:
     # pair 1: starts 5 s late, ends 3 s early -> shorter
     # pair 2: starts 1 s early, ends 1 s late  -> within tol on both, length same
     bd = evaluate._signed_boundary([5.0, -1.0], [-3.0, 1.0])
+    assert bd is not None
     assert bd["n"] == 2
     assert bd["start"]["late"] == 1 and bd["start"]["on"] == 1
     assert bd["end"]["early"] == 1 and bd["end"]["on"] == 1
     assert bd["length"]["shorter"] == 1 and bd["length"]["same"] == 1
 
 
-def test_signed_boundary_none_without_matches():
+def test_signed_boundary_none_without_matches() -> None:
     assert evaluate._signed_boundary([], []) is None
 
 
-def test_fine_histogram_bins_and_overflow():
+def test_fine_histogram_bins_and_overflow() -> None:
     counts, overflow = evaluate._bin_counts([0, 2, 4, 41, 100], step=3.0, upto=42.0)
     assert counts[0] == 2   # 0 and 2 -> first 3 s bin
     assert counts[1] == 1   # 4 -> second bin
@@ -155,7 +157,7 @@ def test_fine_histogram_bins_and_overflow():
     assert overflow == 1    # 100 -> overflow
 
 
-def test_short_gt_excluded_from_scope(tmp_path):
+def test_short_gt_excluded_from_scope(tmp_path: Path) -> None:
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"
     acts.mkdir()
@@ -165,7 +167,7 @@ def test_short_gt_excluded_from_scope(tmp_path):
     labelio.save_intervals("S", [(100, 130, "anaerobic"), (200, 500, "vo2max")], labels_dir=labs)
 
     # a detector that only finds the in-scope rep
-    def predict(aid, t, power):
+    def predict(aid: str, t: Any, power: Any) -> list:
         return [(200, 500)]
 
     rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
@@ -175,7 +177,7 @@ def test_short_gt_excluded_from_scope(tmp_path):
     assert rep["by_type"]["vo2max"]["recall"] == 1.0
 
 
-def test_stratification_structure(bench):
+def test_stratification_structure(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     rep = evaluate.evaluate(predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs)
     assert set(rep["by_place"]) == {"indoor", "outdoor"}

@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL, ACTIVITY_HISTORY_WEEKS, SESSIONS_LOG_PATH
+from src.data.intervals_api import IntervalsClient
 from .client import get_client
 from .tools import TOOLS, execute_tools
 
@@ -56,7 +57,7 @@ def _build_log_section() -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def adapt_plan(activity_client) -> str:
+def adapt_plan(activity_client: IntervalsClient) -> str:
     """Run the agentic loop to adapt the original plan using recent activity data."""
     if not PLAN_ORIGINAL_PATH.exists():
         raise FileNotFoundError(

@@ -28,7 +28,7 @@ sys.path.insert(0, str(_BENCH_DIR))
 import labelio  # noqa: E402
 
 
-def export_activity(activity_id, client: IntervalsClient | None = None,
+def export_activity(activity_id: str, client: IntervalsClient | None = None,
                     out_dir: Path = BENCH_ACTIVITIES_DIR) -> Path:
     """Download an activity and write its (t, power) series as CSV.
 

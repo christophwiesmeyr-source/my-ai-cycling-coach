@@ -12,12 +12,13 @@ from src.ui import MainWindow
 _ICON_PATH = Path(__file__).parent / "assets" / "icon.svg"
 
 
-def main():
+def main() -> None:
     """Run the application"""
     configure_logging()
     app = QApplication(sys.argv)
     app.setDesktopFileName("my-ai-cycling-coach")
-    app.styleHints().setColorScheme(Qt.ColorScheme.Light)
+    if (hints := app.styleHints()):
+        hints.setColorScheme(Qt.ColorScheme.Light)
     if _ICON_PATH.exists():
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
 

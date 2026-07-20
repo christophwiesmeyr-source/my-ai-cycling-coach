@@ -14,7 +14,7 @@ import view_results  # noqa: E402
 
 
 @pytest.fixture
-def bench(tmp_path):
+def bench(tmp_path: Path) -> tuple[Path, Path]:
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"
     acts.mkdir()
@@ -29,7 +29,7 @@ def bench(tmp_path):
     return acts, labs
 
 
-def test_result_for_activity(bench):
+def test_result_for_activity(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     r = view_results.result_for_activity("A", ftp=250, activities_dir=acts, labels_dir=labs)
     assert r["threshold"] == 0.8 * 250
@@ -38,7 +38,7 @@ def test_result_for_activity(bench):
     assert len(r["preds"]) >= 1
 
 
-def test_plot_activity_runs_headless(bench):
+def test_plot_activity_runs_headless(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     r = view_results.result_for_activity("A", ftp=250, activities_dir=acts, labels_dir=labs)
     fig, ax = plt.subplots()
@@ -47,7 +47,7 @@ def test_plot_activity_runs_headless(bench):
     plt.close(fig)
 
 
-def test_viewer_navigation_changes_index(bench):
+def test_viewer_navigation_changes_index(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
     r = view_results.result_for_activity("A", ftp=250, activities_dir=acts, labels_dir=labs)
     viewer = view_results.Viewer(["A", "B"], {"A": r, "B": r})

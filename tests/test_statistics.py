@@ -8,35 +8,35 @@ from src.data import Activity
 class TestRollingMax:
     """Test rolling_max function"""
     
-    def test_empty_array(self):
+    def test_empty_array(self) -> None:
         assert rolling_max(np.array([]), 10) == 0.0
     
-    def test_zero_window(self):
+    def test_zero_window(self) -> None:
         data = np.array([1, 2, 3])
         assert rolling_max(data, 0) == 0.0
     
-    def test_negative_window(self):
+    def test_negative_window(self) -> None:
         data = np.array([1, 2, 3])
         assert rolling_max(data, -1) == 0.0
     
-    def test_window_larger_than_data(self):
+    def test_window_larger_than_data(self) -> None:
         data = np.array([1, 2, 3])
         # Should return max of available data
         assert rolling_max(data, 10) == 3.0
     
-    def test_normal_case(self):
+    def test_normal_case(self) -> None:
         data = np.array([1, 2, 3, 4, 5])
         # Window of 3: averages [2, 3, 4], max is 4
         result = rolling_max(data, 3)
         assert result == 4.0
     
-    def test_with_nans(self):
+    def test_with_nans(self) -> None:
         data = np.array([1, np.nan, 3, 4, 5])
         # Clean data: [1, 3, 4, 5], window 3: averages [8/3, 12/3, 4], max 4
         result = rolling_max(data, 3)
         assert result == 4.0
     
-    def test_all_nans(self):
+    def test_all_nans(self) -> None:
         data = np.array([np.nan, np.nan])
         assert rolling_max(data, 2) == 0.0
 
@@ -44,11 +44,11 @@ class TestRollingMax:
 class TestStatisticsCalculator:
     """Test StatisticsCalculator.calculate_specific_stats"""
     
-    def test_empty_time_array(self, empty_activity):
+    def test_empty_time_array(self, empty_activity: Activity) -> None:
         result = StatisticsCalculator.calculate_specific_stats(empty_activity, 0, 10)
         assert result == {}
     
-    def test_invalid_indices(self, sample_activity):
+    def test_invalid_indices(self, sample_activity: Activity) -> None:
         # Start >= end
         result = StatisticsCalculator.calculate_specific_stats(sample_activity, 10, 5)
         assert result == {}
@@ -61,7 +61,7 @@ class TestStatisticsCalculator:
         result = StatisticsCalculator.calculate_specific_stats(sample_activity, 0, 1000)
         assert result == {}
     
-    def test_single_sample(self, sample_activity):
+    def test_single_sample(self, sample_activity: Activity) -> None:
         # Modify to have single sample
         single_df = sample_activity.data.iloc[:1].copy()
         single_activity = Activity(
@@ -75,7 +75,7 @@ class TestStatisticsCalculator:
         # Should have some basic stats
         assert 'Total Time' in result
     
-    def test_normal_calculation(self, sample_activity):
+    def test_normal_calculation(self, sample_activity: Activity) -> None:
         result = StatisticsCalculator.calculate_specific_stats(sample_activity, 10, 50)
         
         # Check presence of expected keys
@@ -94,7 +94,7 @@ class TestStatisticsCalculator:
         assert isinstance(result['Distance Total'][0], float)
         assert result['Distance Total'][1] == 'km'
     
-    def test_missing_metrics(self, sample_activity):
+    def test_missing_metrics(self, sample_activity: Activity) -> None:
         # Remove power column
         no_power_df = sample_activity.data.drop(columns=['power'])
         no_power_activity = Activity(

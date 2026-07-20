@@ -19,6 +19,7 @@ from PyQt6.QtGui import QColor, QBrush
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
 from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
+from src.data.intervals_api import IntervalsClient
 from src.goals import GOAL_FIELDS
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
 
@@ -37,11 +38,11 @@ class _GoalField:
 
 
 class TrainingTab(QWidget):
-    def __init__(self, activity_client):
+    def __init__(self, activity_client: IntervalsClient):
         super().__init__()
         self.activity_client = activity_client
         self.chat_session = ChatSession()
-        self._active_worker = None
+        self._active_worker: PlanGeneratorWorker | PlanAdaptorWorker | ChatWorker | None = None
         self._loading_sessions = False
         self._stream_text_start: int | None = None
         self._init_ui()
@@ -54,7 +55,7 @@ class TrainingTab(QWidget):
     # UI construction                                                      #
     # ------------------------------------------------------------------ #
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         root = QHBoxLayout(self)
 
         root.addWidget(self._build_left_panel(), 0)
@@ -336,7 +337,7 @@ class TrainingTab(QWidget):
     # Plan generation                                                      #
     # ------------------------------------------------------------------ #
 
-    def _on_generate(self):
+    def _on_generate(self) -> None:
         goals = self._collect_goals()
         if not goals.get("main_goal"):
             QMessageBox.warning(self, "Missing Goal", "Please enter a main training goal.")
@@ -366,7 +367,7 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_plan_generated(self, plan: str):
+    def _on_plan_generated(self, plan: str) -> None:
         self.original_plan_view.setHtml(self._render_markdown(plan))
         self.adapted_plan_view.clear()  # adapted plan was just invalidated/deleted
         self._load_sessions_table()
@@ -378,7 +379,7 @@ class TrainingTab(QWidget):
     # Plan adaptation                                                      #
     # ------------------------------------------------------------------ #
 
-    def _on_adapt(self):
+    def _on_adapt(self) -> None:
         if not PLAN_ORIGINAL_PATH.exists():
             QMessageBox.warning(
                 self, "No Plan", "Generate a training plan first before adapting it."
@@ -394,7 +395,7 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_plan_adapted(self, plan: str):
+    def _on_plan_adapted(self, plan: str) -> None:
         self.adapted_plan_view.setHtml(self._render_markdown(plan))
         self.plan_tabs.setCurrentIndex(1)
         self.chat_session.reload_plans()
@@ -404,7 +405,7 @@ class TrainingTab(QWidget):
     # Chat                                                                 #
     # ------------------------------------------------------------------ #
 
-    def _on_send(self):
+    def _on_send(self) -> None:
         text = self.chat_input.text().strip()
         if not text:
             return
@@ -426,10 +427,10 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_chat_tool_status(self, message: str):
+    def _on_chat_tool_status(self, message: str) -> None:
         self.chat_display.append(f"<i>({message})</i>")
 
-    def _on_chat_chunk(self, chunk: str):
+    def _on_chat_chunk(self, chunk: str) -> None:
         cursor = self.chat_display.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         if self._stream_text_start is None:
@@ -438,7 +439,7 @@ class TrainingTab(QWidget):
         self.chat_display.setTextCursor(cursor)
         self.chat_display.ensureCursorVisible()
 
-    def _on_chat_finished(self, full_response: str):
+    def _on_chat_finished(self, full_response: str) -> None:
         self.chat_session.add_assistant_message(full_response)
         if self._stream_text_start is not None:
             cursor = self.chat_display.textCursor()
@@ -450,7 +451,7 @@ class TrainingTab(QWidget):
         self.chat_display.append("")
         self._set_chat_input_enabled(True)
 
-    def _on_chat_error(self, error: str):
+    def _on_chat_error(self, error: str) -> None:
         self._append_chat_system(f"Error: {error}")
         self._set_chat_input_enabled(True)
 
@@ -474,7 +475,7 @@ class TrainingTab(QWidget):
                 goals[f.key] = f.read()
         return goals
 
-    def _load_sessions_table(self):
+    def _load_sessions_table(self) -> None:
         if not SESSIONS_ORIGINAL_PATH.exists():
             return
 
@@ -547,7 +548,7 @@ class TrainingTab(QWidget):
             header.setStretchLastSection(True)
         self._loading_sessions = False
 
-    def _on_session_selected(self):
+    def _on_session_selected(self) -> None:
         row_idx = self.sessions_table.currentRow()
         if row_idx < 0:
             self.session_detail.clear()
@@ -576,7 +577,7 @@ class TrainingTab(QWidget):
 
         self.session_detail.setHtml("<br>".join(parts))
 
-    def _load_existing_plans(self):
+    def _load_existing_plans(self) -> None:
         if PLAN_ORIGINAL_PATH.exists():
             self.original_plan_view.setHtml(self._render_markdown(PLAN_ORIGINAL_PATH.read_text()))
         if PLAN_ADAPTED_PATH.exists():
@@ -599,7 +600,7 @@ class TrainingTab(QWidget):
             li {{ margin: 2px 0; }}
         </style></head><body>{body}</body></html>"""
 
-    def _refresh_row_colors(self, log: dict):
+    def _refresh_row_colors(self, log: dict) -> None:
         today_str = date.today().isoformat()
         color_done   = QColor(200, 235, 200)
         color_missed = QColor(235, 200, 200)
@@ -626,7 +627,7 @@ class TrainingTab(QWidget):
                     item.setBackground(QBrush(row_color) if row_color else QBrush())
         self._loading_sessions = False
 
-    def _prefill_completed_date(self, row: int, col: int):
+    def _prefill_completed_date(self, row: int, col: int) -> None:
         completed_col = self.sessions_table.columnCount() - 2
         if col != completed_col:
             return
@@ -644,7 +645,7 @@ class TrainingTab(QWidget):
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _save_sessions_log(self):
+    def _save_sessions_log(self) -> None:
         if self._loading_sessions:
             return
         log = {}
@@ -666,20 +667,20 @@ class TrainingTab(QWidget):
         SESSIONS_LOG_PATH.write_text(json.dumps(log, indent=2))
         self._refresh_row_colors(log)
 
-    def _connect_autosave(self):
+    def _connect_autosave(self) -> None:
         for f in self._goal_fields:
             f.signal.connect(self._autosave_goals)
         self.sessions_table.itemChanged.connect(self._save_sessions_log)
         self.sessions_table.cellDoubleClicked.connect(self._prefill_completed_date)
 
-    def _autosave_goals(self):
+    def _autosave_goals(self) -> None:
         self._save_goals(self._collect_goals())
 
-    def _save_goals(self, goals: dict):
+    def _save_goals(self, goals: dict) -> None:
         GOALS_PATH.parent.mkdir(parents=True, exist_ok=True)
         GOALS_PATH.write_text(json.dumps(goals, indent=2))
 
-    def _load_goals(self):
+    def _load_goals(self) -> None:
         if not GOALS_PATH.exists():
             return
         try:
@@ -694,24 +695,24 @@ class TrainingTab(QWidget):
             if not f.key.startswith("_"):
                 f.write(goals.get(f.key))
 
-    def _set_busy(self, busy: bool, message: str):
+    def _set_busy(self, busy: bool, message: str) -> None:
         self.btn_generate.setEnabled(not busy)
         self.btn_adapt.setEnabled(not busy)
         self.status_label.setText(message)
 
-    def _set_chat_input_enabled(self, enabled: bool):
+    def _set_chat_input_enabled(self, enabled: bool) -> None:
         self.chat_input.setEnabled(enabled)
         self.btn_send.setEnabled(enabled)
 
-    def _append_chat_user(self, text: str):
+    def _append_chat_user(self, text: str) -> None:
         self.chat_display.append(f"<b>You:</b> {text}\n")
 
-    def _append_chat_assistant_start(self):
+    def _append_chat_assistant_start(self) -> None:
         self.chat_display.append("<b>Coach:</b> ")
         self._stream_text_start = None  # set lazily on first chunk
 
-    def _append_chat_system(self, text: str):
+    def _append_chat_system(self, text: str) -> None:
         self.chat_display.append(f"<i>{text}</i>\n")
 
-    def _on_error(self, error: str):
+    def _on_error(self, error: str) -> None:
         QMessageBox.critical(self, "Error", error)

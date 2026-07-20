@@ -19,7 +19,7 @@ class Activity:
     # Columns: timestamp, power, heart_rate, cadence, speed, distance, altitude
     data: pd.DataFrame = field(default_factory=pd.DataFrame)
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Ensure data is a proper DataFrame"""
         if isinstance(self.data, dict):
             self.data = pd.DataFrame(self.data)

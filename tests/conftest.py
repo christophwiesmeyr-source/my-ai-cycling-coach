@@ -6,7 +6,7 @@ from src.data import Activity
 
 
 @pytest.fixture
-def sample_activity():
+def sample_activity() -> Activity:
     """Create a sample Activity with test data"""
     # Create sample data with 100 points over 1000 seconds
     time_points = pd.date_range('2023-01-01', periods=100, freq='10s')
@@ -28,7 +28,7 @@ def sample_activity():
 
 
 @pytest.fixture
-def empty_activity():
+def empty_activity() -> Activity:
     """Create an empty Activity for edge case testing"""
     df = pd.DataFrame({'timestamp': pd.to_datetime([])})
     return Activity(

@@ -4,6 +4,7 @@ from typing import Optional
 import numpy as np
 from dataclasses import dataclass
 
+from src.data.activity import Activity
 from .activity_metrics import representative_dt
 
 # Constants for rolling max windows (in seconds)
@@ -27,7 +28,7 @@ class StatisticsCalculator:
     """Calculates specific statistics for activity data selections"""
     
     @staticmethod
-    def calculate_specific_stats(activity, start_idx: int, end_idx: int) -> dict:
+    def calculate_specific_stats(activity: Activity, start_idx: int, end_idx: int) -> dict:
         """
         Calculate specific statistics for DISTANCE, POWER, HEART RATE, Total Time, and Total Moving Time.
         

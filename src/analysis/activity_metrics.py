@@ -19,6 +19,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from src.data.activity import Activity
+
 # A time delta larger than GAP_FACTOR x the median sampling interval (but at
 # least MIN_GAP_SECONDS) is treated as a pause gap rather than a real sample.
 GAP_FACTOR = 3.0
@@ -65,7 +67,7 @@ def sample_weights(time_array: np.ndarray, gap_threshold: Optional[float] = None
     return w
 
 
-def moving_mask(activity) -> Optional[np.ndarray]:
+def moving_mask(activity: Activity) -> Optional[np.ndarray]:
     """Per-sample moving flag as a boolean array, or None if the source doesn't provide one."""
     series = activity.get_time_series("moving")
     if series is None or len(series) == 0:
@@ -78,7 +80,7 @@ def moving_mask(activity) -> Optional[np.ndarray]:
 PEDALING_CADENCE_RPM = 3
 
 
-def pedaling_mask(activity, cadence_threshold: float = PEDALING_CADENCE_RPM) -> Optional[np.ndarray]:
+def pedaling_mask(activity: Activity, cadence_threshold: float = PEDALING_CADENCE_RPM) -> Optional[np.ndarray]:
     """Per-sample mask of samples where the rider is pedalling.
 
     Prefers cadence (>= threshold); falls back to positive power when there is no
@@ -104,7 +106,7 @@ def _count_stops(mask: np.ndarray) -> int:
     return starts
 
 
-def time_summary(activity) -> dict:
+def time_summary(activity: Activity) -> dict:
     """Elapsed / moving / stopped seconds (+ stop count) where derivable.
 
     Headline times prefer activity metadata (``total_elapsed_time`` /

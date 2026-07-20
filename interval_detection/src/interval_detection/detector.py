@@ -80,7 +80,9 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(starts, ends))
 
 
-def _merge_close(runs, grid_s: np.ndarray, max_gap_s: float):
+def _merge_close(
+    runs: list[tuple[int, int]], grid_s: np.ndarray, max_gap_s: float
+) -> list[tuple[int, int]]:
     """Merge runs whose time gap is <= max_gap_s."""
     if not runs:
         return []

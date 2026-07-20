@@ -21,7 +21,7 @@ detector, whose output stays bare ``(start_s, end_s)``.
 import csv
 import json
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -43,7 +43,7 @@ def list_activity_ids(activities_dir: Path = ACTIVITIES_DIR) -> List[str]:
     return sorted(p.stem for p in Path(activities_dir).glob("*.csv"))
 
 
-def load_activity_csv(activity_id, activities_dir: Path = ACTIVITIES_DIR
+def load_activity_csv(activity_id: str, activities_dir: Path = ACTIVITIES_DIR
                       ) -> Tuple[np.ndarray, np.ndarray]:
     """Load (t, power) arrays for an activity from its neutral CSV."""
     path = Path(activities_dir) / f"{activity_id}.csv"
@@ -55,11 +55,11 @@ def load_activity_csv(activity_id, activities_dir: Path = ACTIVITIES_DIR
     return np.asarray(t, dtype=float), np.asarray(p, dtype=float)
 
 
-def annotation_path(activity_id, labels_dir: Path = LABELS_DIR) -> Path:
+def annotation_path(activity_id: str, labels_dir: Path = LABELS_DIR) -> Path:
     return Path(labels_dir) / f"{activity_id}.json"
 
 
-def _coerce_interval(iv) -> Interval:
+def _coerce_interval(iv: Sequence) -> Interval:
     """Accept (start, end) or (start, end, type); clamp type to the vocabulary."""
     start, end = float(iv[0]), float(iv[1])
     itype = iv[2] if len(iv) > 2 else DEFAULT_TYPE
@@ -68,7 +68,7 @@ def _coerce_interval(iv) -> Interval:
     return start, end, itype
 
 
-def load_annotation(activity_id, labels_dir: Path = LABELS_DIR) -> dict:
+def load_annotation(activity_id: str, labels_dir: Path = LABELS_DIR) -> dict:
     """Return ``{'indoor', 'sport_type', 'intervals'}``.
 
     ``intervals`` is a list of ``(start_s, end_s, type)`` tuples, or ``None`` if
@@ -90,7 +90,7 @@ def load_annotation(activity_id, labels_dir: Path = LABELS_DIR) -> dict:
     }
 
 
-def _write_annotation(activity_id, ann: dict, labels_dir: Path) -> Path:
+def _write_annotation(activity_id: str, ann: dict, labels_dir: Path) -> Path:
     Path(labels_dir).mkdir(parents=True, exist_ok=True)
     intervals = ann.get("intervals")
     if intervals is not None:
@@ -112,7 +112,7 @@ def _write_annotation(activity_id, ann: dict, labels_dir: Path) -> Path:
     return path
 
 
-def save_intervals(activity_id, intervals, labels_dir: Path = LABELS_DIR) -> Path:
+def save_intervals(activity_id: str, intervals: Iterable[Sequence], labels_dir: Path = LABELS_DIR) -> Path:
     """Save the interval ground truth, preserving existing activity meta.
 
     Pass a list (possibly empty) to mark the activity as annotated.
@@ -122,7 +122,7 @@ def save_intervals(activity_id, intervals, labels_dir: Path = LABELS_DIR) -> Pat
     return _write_annotation(activity_id, ann, labels_dir)
 
 
-def save_meta(activity_id, indoor: Optional[bool], sport_type: Optional[str],
+def save_meta(activity_id: str, indoor: Optional[bool], sport_type: Optional[str],
               labels_dir: Path = LABELS_DIR) -> Path:
     """Set activity meta, preserving existing intervals (incl. the unlabelled state)."""
     ann = load_annotation(activity_id, labels_dir)

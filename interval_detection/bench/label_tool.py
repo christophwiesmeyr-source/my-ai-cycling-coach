@@ -15,6 +15,7 @@ Controls:
 """
 import sys
 from pathlib import Path
+from typing import Any, Optional, Sequence
 
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -27,11 +28,11 @@ import labelio  # noqa: E402
 
 
 class Labeler(QtWidgets.QMainWindow):
-    def __init__(self, activity_ids):
+    def __init__(self, activity_ids: Sequence[str]):
         super().__init__()
         self.ids = list(activity_ids)
         self.idx = 0
-        self.regions = []  # list[pg.LinearRegionItem], each with a .itype attribute
+        self.regions: list[Any] = []  # list[pg.LinearRegionItem], each with a .itype attribute
         self._dirty = False          # user edited intervals since load
         self._loaded_labeled = False  # activity already had a labelled state
 
@@ -92,10 +93,10 @@ class Labeler(QtWidgets.QMainWindow):
         self.load_current()
 
     @property
-    def current_id(self):
+    def current_id(self) -> str:
         return self.ids[self.idx]
 
-    def load_current(self):
+    def load_current(self) -> None:
         for r in self.regions:
             self.plot.removeItem(r)
         self.regions = []
@@ -112,7 +113,7 @@ class Labeler(QtWidgets.QMainWindow):
         self._update_annot_label()
         self.refresh_list()
 
-    def _update_annot_label(self):
+    def _update_annot_label(self) -> None:
         if self._loaded_labeled:
             self.annot_label.setText("Annotated")
             self.annot_label.setStyleSheet("color: green; font-weight: bold; font-size: 14pt;")
@@ -120,12 +121,12 @@ class Labeler(QtWidgets.QMainWindow):
             self.annot_label.setText("Not Annotated")
             self.annot_label.setStyleSheet("color: red; font-weight: bold; font-size: 14pt;")
 
-    def _redraw_curve(self):
+    def _redraw_curve(self) -> None:
         """Redraw the power trace, smoothed or raw, without touching intervals."""
         p = moving_average(self._t, self._p) if self.smooth_check.isChecked() else self._p
         self.curve.setData(self._t, p)
 
-    def _make_region(self, start, end, itype=labelio.DEFAULT_TYPE):
+    def _make_region(self, start: float, end: float, itype: str = labelio.DEFAULT_TYPE) -> Any:
         region = pg.LinearRegionItem([start, end], brush=pg.mkBrush(255, 140, 0, 60))
         region.itype = itype
         region.sigRegionChangeFinished.connect(self._on_region_changed)
@@ -133,11 +134,11 @@ class Labeler(QtWidgets.QMainWindow):
         self.regions.append(region)
         return region
 
-    def _on_region_changed(self):
+    def _on_region_changed(self) -> None:
         self._dirty = True
         self.refresh_list()
 
-    def add_region(self):
+    def add_region(self) -> None:
         (x0, x1), _ = self.plot.getViewBox().viewRange()
         centre = 0.5 * (x0 + x1)
         half = min(30.0, 0.1 * (x1 - x0))
@@ -146,23 +147,23 @@ class Labeler(QtWidgets.QMainWindow):
         self.refresh_list()
         self._select_region(region)  # so the type combo immediately controls it
 
-    def _sorted_regions(self):
+    def _sorted_regions(self) -> list:
         return sorted(self.regions, key=lambda r: r.getRegion()[0])
 
-    def intervals(self):
+    def intervals(self) -> list:
         return [(*r.getRegion(), r.itype) for r in self._sorted_regions()]
 
-    def _selected_region(self):
+    def _selected_region(self) -> Optional[Any]:
         row = self.listw.currentRow()
         ordered = self._sorted_regions()
         return ordered[row] if 0 <= row < len(ordered) else None
 
-    def _select_region(self, region):
+    def _select_region(self, region: Any) -> None:
         ordered = self._sorted_regions()
         if region in ordered:
             self.listw.setCurrentRow(ordered.index(region))
 
-    def remove_selected(self):
+    def remove_selected(self) -> None:
         region = self._selected_region()
         if region is not None:
             self.regions.remove(region)
@@ -170,7 +171,7 @@ class Labeler(QtWidgets.QMainWindow):
             self._dirty = True
             self.refresh_list()
 
-    def _sync_type_combo(self):
+    def _sync_type_combo(self) -> None:
         region = self._selected_region()
         self.type_combo.setEnabled(region is not None)
         if region is not None:
@@ -178,14 +179,14 @@ class Labeler(QtWidgets.QMainWindow):
             self.type_combo.setCurrentText(region.itype)
             self.type_combo.blockSignals(False)
 
-    def _on_type_changed(self, itype):
+    def _on_type_changed(self, itype: str) -> None:
         region = self._selected_region()
         if region is not None and region.itype != itype:
             region.itype = itype
             self._dirty = True
             self.refresh_list()
 
-    def refresh_list(self):
+    def refresh_list(self) -> None:
         row = self.listw.currentRow()
         self.listw.blockSignals(True)
         self.listw.clear()
@@ -200,31 +201,32 @@ class Labeler(QtWidgets.QMainWindow):
             f"— {len(self.regions)} intervals"
         )
 
-    def save(self):
+    def save(self) -> None:
         """Explicit save — always marks the activity annotated (even with 0 intervals)."""
         path = labelio.save_intervals(self.current_id, self.intervals())
         self._dirty = False
         self._loaded_labeled = True
         self._update_annot_label()
-        self.statusBar().showMessage(f"saved {path}", 3000)
+        if (bar := self.statusBar()):
+            bar.showMessage(f"saved {path}", 3000)
 
-    def _autosave(self):
+    def _autosave(self) -> None:
         # Don't mark a merely-viewed, never-labelled activity as annotated.
         if self._dirty or self._loaded_labeled:
             self.save()
 
-    def next(self):
+    def next(self) -> None:
         self._autosave()
         self.idx = (self.idx + 1) % len(self.ids)
         self.load_current()
 
-    def prev(self):
+    def prev(self) -> None:
         self._autosave()
         self.idx = (self.idx - 1) % len(self.ids)
         self.load_current()
 
 
-def main():
+def main() -> int:
     ids = labelio.list_activity_ids()
     if not ids:
         print(f"No activities in {labelio.ACTIVITIES_DIR}.\n"

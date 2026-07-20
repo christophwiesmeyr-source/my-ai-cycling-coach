@@ -7,25 +7,25 @@ from src.analysis.signal_processing import apply_moving_average_filter
 class TestApplyMovingAverageFilter:
     """Test apply_moving_average_filter function"""
     
-    def test_empty_data(self):
+    def test_empty_data(self) -> None:
         data = np.array([])
         time_array = np.array([])
         result = apply_moving_average_filter(data, time_array)
         assert len(result) == 0
     
-    def test_single_sample(self):
+    def test_single_sample(self) -> None:
         data = np.array([1.0])
         time_array = np.array([0.0])
         result = apply_moving_average_filter(data, time_array, 20.0)
         np.testing.assert_array_equal(result, data)  # Should return unchanged
     
-    def test_small_window(self):
+    def test_small_window(self) -> None:
         data = np.array([1, 2, 3, 4, 5])
         time_array = np.linspace(0, 4, 5)  # 1 second intervals
         result = apply_moving_average_filter(data, time_array, 0.5)  # Window smaller than sample rate
         np.testing.assert_array_equal(result, data)  # Should return unchanged
     
-    def test_normal_filtering(self):
+    def test_normal_filtering(self) -> None:
         data = np.array([1, 2, 3, 4, 5])
         time_array = np.linspace(0, 4, 5)  # 1 second intervals
         result = apply_moving_average_filter(data, time_array, 2.0)  # Window of 2 samples
@@ -35,7 +35,7 @@ class TestApplyMovingAverageFilter:
         assert len(result) == len(data)
         assert result[0] < result[2]  # Should smooth
     
-    def test_with_nans(self):
+    def test_with_nans(self) -> None:
         data = np.array([1, np.nan, 3, 4, 5])
         time_array = np.linspace(0, 4, 5)
         result = apply_moving_average_filter(data, time_array, 2.0)

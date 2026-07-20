@@ -14,8 +14,9 @@ dependencies = ["numpy"]
 [project.optional-dependencies]
 test = ["pytest"]
 # Tooling for the test bench / evaluation scripts only — NOT needed to use the
-# detector. matplotlib is imported lazily in bench/evaluate.py.
-bench = ["pytest", "matplotlib"]
+# detector. matplotlib is used by bench/evaluate.py and bench/view_results.py;
+# pyqtgraph/PyQt6 are used by the interactive bench/label_tool.py.
+bench = ["pytest", "matplotlib", "pyqtgraph", "PyQt6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

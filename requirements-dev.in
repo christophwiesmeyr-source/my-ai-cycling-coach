@@ -1,0 +1,14 @@
+-r requirements.in
+
+# Re-declared with the bench extra so matplotlib (needed by
+# interval_detection's test bench) is included in the dev environment.
+-e ./interval_detection[bench]
+
+pytest
+pytest-mock
+pytest-cov
+ruff
+mypy
+pandas-stubs
+types-Markdown
+pip-tools

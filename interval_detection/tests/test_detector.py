@@ -1,4 +1,5 @@
 """Tests for the v1 sustained-elevation detector."""
+
 import numpy as np
 
 from interval_detection import detect_intervals
@@ -14,6 +15,7 @@ from interval_detection.detector import (
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def test_runs_finds_contiguous_true_blocks() -> None:
     mask = np.array([False, True, True, False, True])
     assert _runs(mask) == [(1, 3), (4, 5)]
@@ -28,8 +30,8 @@ def test_merge_close_bridges_small_gaps_only() -> None:
     grid = np.arange(300.0)
     runs = [(0, 60), (85, 150), (300 - 1, 300)]  # gaps: 25 s, then large
     merged = _merge_close(runs, grid, max_gap_s=30)
-    assert merged[0] == (0, 150)            # 25 s gap bridged
-    assert merged[-1] == (300 - 1, 300)     # far run kept separate
+    assert merged[0] == (0, 150)  # 25 s gap bridged
+    assert merged[-1] == (300 - 1, 300)  # far run kept separate
 
 
 def test_merge_close_keeps_large_gaps() -> None:
@@ -51,7 +53,10 @@ def test_intensity_threshold_fallback_on_mean_positive() -> None:
 # End to end
 # --------------------------------------------------------------------------- #
 
-def _signal(blocks: list[tuple[int, int]], total: int, base: float = 100.0, high: float = 250.0) -> tuple[np.ndarray, np.ndarray]:
+
+def _signal(
+    blocks: list[tuple[int, int]], total: int, base: float = 100.0, high: float = 250.0
+) -> tuple[np.ndarray, np.ndarray]:
     """Power array: `base` everywhere, `high` inside each (start, end) block."""
     t = np.arange(total, dtype=float)
     p = np.full(total, base)
@@ -83,11 +88,12 @@ def test_two_far_blocks_detected_separately() -> None:
 
 # --- power-duration rule -------------------------------------------------- #
 
+
 def test_min_duration_for_intensity_bands() -> None:
-    assert _min_duration_for_intensity(0.85) == 420.0   # low sweet spot
-    assert _min_duration_for_intensity(0.95) == 255.0   # sweet spot
-    assert _min_duration_for_intensity(1.05) == 150.0   # threshold
-    assert _min_duration_for_intensity(1.20) == 75.0    # VO2 / anaerobic
+    assert _min_duration_for_intensity(0.85) == 420.0  # low sweet spot
+    assert _min_duration_for_intensity(0.95) == 255.0  # sweet spot
+    assert _min_duration_for_intensity(1.05) == 150.0  # threshold
+    assert _min_duration_for_intensity(1.20) == 75.0  # VO2 / anaerobic
 
 
 def test_short_modest_block_rejected() -> None:

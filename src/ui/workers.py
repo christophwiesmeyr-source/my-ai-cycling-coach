@@ -1,11 +1,16 @@
 """Background QThread workers for AI operations — keeps the UI responsive"""
+
 import logging
 from typing import Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from src.ai.client import get_client
-from src.ai.plan_generator import generate_plan, generate_sessions, clear_derived_plan_data
+from src.ai.plan_generator import (
+    generate_plan,
+    generate_sessions,
+    clear_derived_plan_data,
+)
 from src.ai.plan_adaptor import adapt_plan
 from src.ai.chat_session import ChatSession
 from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
@@ -93,7 +98,9 @@ class ChatWorker(QThread):
                 logger.info(
                     "chat turn stop_reason=%s input_tokens=%s output_tokens=%s "
                     "cache_creation=%s cache_read=%s",
-                    final.stop_reason, usage.input_tokens, usage.output_tokens,
+                    final.stop_reason,
+                    usage.input_tokens,
+                    usage.output_tokens,
                     getattr(usage, "cache_creation_input_tokens", None),
                     getattr(usage, "cache_read_input_tokens", None),
                 )

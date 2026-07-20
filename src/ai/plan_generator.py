@@ -1,11 +1,17 @@
 """Training plan generator — plan narrative and structured session list"""
+
 from typing import cast
 
 from anthropic.types import TextBlock
 
 from src.constants import (
-    APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL,
-    PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH,
+    APP_DIR,
+    PLAN_ORIGINAL_PATH,
+    SESSIONS_ORIGINAL_PATH,
+    AI_MODEL,
+    PLAN_ADAPTED_PATH,
+    SESSIONS_ADAPTED_PATH,
+    SESSIONS_LOG_PATH,
 )
 from src.goals import GOAL_FIELDS
 from .client import get_client
@@ -54,7 +60,9 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
             "You are a cycling coach assistant that converts training plans into structured "
             "session data. Output only clean CSV — no prose, no markdown fences."
         ),
-        messages=[{"role": "user", "content": _build_sessions_prompt(plan_text, goals)}],
+        messages=[
+            {"role": "user", "content": _build_sessions_prompt(plan_text, goals)}
+        ],
     )
 
     raw = cast(TextBlock, message.content[0]).text.strip()
@@ -66,6 +74,7 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 # ------------------------------------------------------------------ #
 # Prompt builders                                                      #
 # ------------------------------------------------------------------ #
+
 
 def _build_plan_header(goals: dict) -> str:
     """Markdown block recording the parameter values used to generate this plan."""
@@ -97,9 +106,14 @@ def _build_plan_prompt(goals: dict) -> str:
     other_lines = "\n".join(
         f"- {key}: {value}"
         for key, value in goals.items()
-        if value and key not in {
-            "event_name", "event_date", "current_date",
-            "days_until_event", "weeks_until_event",
+        if value
+        and key
+        not in {
+            "event_name",
+            "event_date",
+            "current_date",
+            "days_until_event",
+            "weeks_until_event",
         }
     )
 

@@ -1,4 +1,5 @@
 """Tests pinning the public detector interface (algorithm still TBD)."""
+
 import numpy as np
 
 from interval_detection import Interval, detect_intervals

@@ -1,4 +1,5 @@
 """Tests for resample_to_1hz."""
+
 import numpy as np
 
 from interval_detection.resample import resample_to_1hz

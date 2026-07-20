@@ -1,4 +1,5 @@
 """Anthropic API client — key loading and client factory"""
+
 import anthropic
 
 from src.constants import CLAUDE_API_KEY_PATH

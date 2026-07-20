@@ -19,6 +19,7 @@ Metrics are micro-averaged (intervals pooled across activities) and stratified
 by indoor/outdoor (full P/R/F1) and by interval type (recall + boundary error;
 predictions carry no type so FP cannot be attributed to one).
 """
+
 import statistics
 import sys
 from collections import Counter, defaultdict
@@ -56,7 +57,9 @@ def boundary_error(pred: tuple[float, float], gt: tuple[float, float]) -> float:
 
 
 def match(
-    preds: list[tuple[float, float]], gts: list[tuple[float, float]], threshold: float = COVERAGE_THRESHOLD
+    preds: list[tuple[float, float]],
+    gts: list[tuple[float, float]],
+    threshold: float = COVERAGE_THRESHOLD,
 ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
     """Lenient coverage matching.
 
@@ -83,9 +86,7 @@ def match(
                 consumed_gts.add(j)
 
     # Remaining preds cover <= 1 GT. Assign each free GT to its best coverer.
-    available = {
-        i: covers[i] - consumed_gts for i in range(n) if i not in merged_preds
-    }
+    available = {i: covers[i] - consumed_gts for i in range(n) if i not in merged_preds}
     for j in range(m):
         if j in consumed_gts:
             continue
@@ -103,7 +104,11 @@ def match(
     return tp_pairs, sorted(fp), sorted(fn)
 
 
-def score(preds: list[tuple[float, float]], gts: list[tuple[float, float]], threshold: float = COVERAGE_THRESHOLD) -> dict:
+def score(
+    preds: list[tuple[float, float]],
+    gts: list[tuple[float, float]],
+    threshold: float = COVERAGE_THRESHOLD,
+) -> dict:
     """Per-activity counts and boundary errors for matched pairs."""
     tp_pairs, fp, fn = match(preds, gts, threshold)
     return {
@@ -119,7 +124,10 @@ def score(preds: list[tuple[float, float]], gts: list[tuple[float, float]], thre
 # Aggregation
 # --------------------------------------------------------------------------- #
 
-def _prf(tp: int, fp: int, fn: int) -> tuple[Optional[float], Optional[float], Optional[float]]:
+
+def _prf(
+    tp: int, fp: int, fn: int
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
     precision = tp / (tp + fp) if (tp + fp) else None
     recall = tp / (tp + fn) if (tp + fn) else None
     if precision is None or recall is None:
@@ -142,7 +150,9 @@ def _bstats(values: Sequence[float]) -> dict:
     }
 
 
-def _signed_boundary(dstart: Sequence[float], dend: Sequence[float], tol: float = BOUNDARY_TOL_S) -> Optional[dict]:
+def _signed_boundary(
+    dstart: Sequence[float], dend: Sequence[float], tol: float = BOUNDARY_TOL_S
+) -> Optional[dict]:
     """Signed boundary behaviour over matched pairs (pred - GT).
 
     Positive = late: a late start clips into the rep; a late end runs into the
@@ -155,8 +165,13 @@ def _signed_boundary(dstart: Sequence[float], dend: Sequence[float], tol: float 
     def split(vals: Sequence[float]) -> dict:
         late = sum(1 for v in vals if v > tol)
         early = sum(1 for v in vals if v < -tol)
-        return {"mean": statistics.fmean(vals), "median": statistics.median(vals),
-                "late": late, "early": early, "on": len(vals) - late - early}
+        return {
+            "mean": statistics.fmean(vals),
+            "median": statistics.median(vals),
+            "late": late,
+            "early": early,
+            "on": len(vals) - late - early,
+        }
 
     length = [de - ds for ds, de in zip(dstart, dend)]
     longer = sum(1 for v in length if v > tol)
@@ -165,7 +180,11 @@ def _signed_boundary(dstart: Sequence[float], dend: Sequence[float], tol: float 
         "n": len(dstart),
         "start": split(dstart),
         "end": split(dend),
-        "length": {"longer": longer, "shorter": shorter, "same": len(length) - longer - shorter},
+        "length": {
+            "longer": longer,
+            "shorter": shorter,
+            "same": len(length) - longer - shorter,
+        },
     }
 
 
@@ -177,11 +196,15 @@ def _summary(counts: dict, boundary: Optional[Sequence[float]]) -> dict:
     return out
 
 
-def evaluate(predict: Optional[Callable] = None, ftp: float = ATHLETE_FTP, activity_ids: Optional[list] = None,
-             activities_dir: Path = labelio.ACTIVITIES_DIR,
-             labels_dir: Path = labelio.LABELS_DIR,
-             threshold: float = COVERAGE_THRESHOLD,
-             min_gt_duration_s: float = MIN_INTERVAL_S) -> dict:
+def evaluate(
+    predict: Optional[Callable] = None,
+    ftp: float = ATHLETE_FTP,
+    activity_ids: Optional[list] = None,
+    activities_dir: Path = labelio.ACTIVITIES_DIR,
+    labels_dir: Path = labelio.LABELS_DIR,
+    threshold: float = COVERAGE_THRESHOLD,
+    min_gt_duration_s: float = MIN_INTERVAL_S,
+) -> dict:
     """Run a detector over the labelled bench and return a stratified report.
 
     ``predict`` is a callable ``(activity_id, t, power) -> list[(start_s, end_s)]``.
@@ -191,13 +214,21 @@ def evaluate(predict: Optional[Callable] = None, ftp: float = ATHLETE_FTP, activ
     than ``min_gt_duration_s`` are out of the operating envelope and excluded.
     """
     if predict is None:
+
         def predict(_aid: str, t: Any, power: Any) -> list:
             return detect_intervals(t, power, ftp=ftp)
 
-    ids = activity_ids if activity_ids is not None else labelio.list_activity_ids(activities_dir)
+    ids = (
+        activity_ids
+        if activity_ids is not None
+        else labelio.list_activity_ids(activities_dir)
+    )
 
     overall = {"tp": 0, "fp": 0, "fn": 0}
-    place = {"indoor": {"tp": 0, "fp": 0, "fn": 0}, "outdoor": {"tp": 0, "fp": 0, "fn": 0}}
+    place = {
+        "indoor": {"tp": 0, "fp": 0, "fn": 0},
+        "outdoor": {"tp": 0, "fp": 0, "fn": 0},
+    }
     boundary_all: list[float] = []
     dstart_all: list[float] = []
     dend_all: list[float] = []
@@ -246,7 +277,9 @@ def evaluate(predict: Optional[Callable] = None, ftp: float = ATHLETE_FTP, activ
             typ: {
                 "n": type_total[typ],
                 "found": type_found[typ],
-                "recall": type_found[typ] / type_total[typ] if type_total[typ] else None,
+                "recall": type_found[typ] / type_total[typ]
+                if type_total[typ]
+                else None,
                 "boundary": _bstats(type_boundary[typ]),
             }
             for typ in sorted(type_total)
@@ -258,6 +291,7 @@ def evaluate(predict: Optional[Callable] = None, ftp: float = ATHLETE_FTP, activ
 # Reporting
 # --------------------------------------------------------------------------- #
 
+
 def _fmt(x: Optional[float], pct: bool = False) -> str:
     if x is None:
         return "  n/a"
@@ -268,7 +302,9 @@ def _secs(x: Optional[float]) -> str:
     return "n/a" if x is None else f"{x:.1f}s"
 
 
-def _bin_counts(values: Sequence[float], step: float, upto: float) -> tuple[list[int], int]:
+def _bin_counts(
+    values: Sequence[float], step: float, upto: float
+) -> tuple[list[int], int]:
     """Counts of values in [0, step), [step, 2*step), ... up to `upto`, + overflow."""
     n_bins = int(round(upto / step))
     counts = [0] * n_bins
@@ -281,7 +317,9 @@ def _bin_counts(values: Sequence[float], step: float, upto: float) -> tuple[list
     return counts, overflow
 
 
-def _fine_histogram(values: Sequence[float], step: float = 3.0, upto: float = 42.0, width: int = 40) -> str:
+def _fine_histogram(
+    values: Sequence[float], step: float = 3.0, upto: float = 42.0, width: int = 40
+) -> str:
     """Fine-grained histogram zooming into small boundary errors (the ones that
     still matter — even a sub-bucket error skews the interval's averaged stats)."""
     if not values:
@@ -318,42 +356,61 @@ def _text_histogram(values: Sequence[float], bins: int = 10, width: int = 40) ->
 
 
 def format_report(report: dict) -> str:
-    lines = [f"Evaluated {report['n_activities']} labelled activities "
-             f"(excluded {report['excluded_short_gt']} sub-{int(MIN_INTERVAL_S)}s GT, out of envelope).", ""]
+    lines = [
+        f"Evaluated {report['n_activities']} labelled activities "
+        f"(excluded {report['excluded_short_gt']} sub-{int(MIN_INTERVAL_S)}s GT, out of envelope).",
+        "",
+    ]
 
     o = report["overall"]
     lines.append("Overall (micro-averaged):")
     lines.append(f"  TP {o['tp']}  FP {o['fp']}  FN {o['fn']}")
-    lines.append(f"  precision {_fmt(o['precision'], True)}   "
-                 f"recall {_fmt(o['recall'], True)}   f1 {_fmt(o['f1'], True)}")
+    lines.append(
+        f"  precision {_fmt(o['precision'], True)}   "
+        f"recall {_fmt(o['recall'], True)}   f1 {_fmt(o['f1'], True)}"
+    )
     b = o["boundary"]
-    lines.append(f"  boundary error: mean {_secs(b['mean'])}  median {_secs(b['median'])}  (n={b['n']})")
+    lines.append(
+        f"  boundary error: mean {_secs(b['mean'])}  median {_secs(b['median'])}  (n={b['n']})"
+    )
     lines.append("")
 
     lines.append("By recording:")
     for place, s in report["by_place"].items():
-        lines.append(f"  {place:8} TP {s['tp']:2} FP {s['fp']:2} FN {s['fn']:2} | "
-                     f"P {_fmt(s['precision'], True)} R {_fmt(s['recall'], True)} F1 {_fmt(s['f1'], True)}")
+        lines.append(
+            f"  {place:8} TP {s['tp']:2} FP {s['fp']:2} FN {s['fn']:2} | "
+            f"P {_fmt(s['precision'], True)} R {_fmt(s['recall'], True)} F1 {_fmt(s['f1'], True)}"
+        )
     lines.append("")
 
     lines.append("By interval type (recall + boundary):")
     for typ, s in report["by_type"].items():
         bb = s["boundary"]
-        lines.append(f"  {typ:11} n {s['n']:2}  found {s['found']:2}  "
-                     f"recall {_fmt(s['recall'], True)}  "
-                     f"boundary mean {_secs(bb['mean'])}")
+        lines.append(
+            f"  {typ:11} n {s['n']:2}  found {s['found']:2}  "
+            f"recall {_fmt(s['recall'], True)}  "
+            f"boundary mean {_secs(bb['mean'])}"
+        )
     lines.append("")
 
     bd = report["boundary_direction"]
     if bd:
         s, e, length = bd["start"], bd["end"], bd["length"]
-        lines.append("Boundary direction (pred − GT; + = late, end-late runs into recovery):")
-        lines.append(f"  start: mean {s['mean']:+5.1f}s  median {s['median']:+5.1f}s   "
-                     f"(late {s['late']}, early {s['early']}, on {s['on']})")
-        lines.append(f"  end:   mean {e['mean']:+5.1f}s  median {e['median']:+5.1f}s   "
-                     f"(late {e['late']}, early {e['early']}, on {e['on']})")
-        lines.append(f"  length vs GT: shorter {length['shorter']}, "
-                     f"longer {length['longer']}, same {length['same']}")
+        lines.append(
+            "Boundary direction (pred − GT; + = late, end-late runs into recovery):"
+        )
+        lines.append(
+            f"  start: mean {s['mean']:+5.1f}s  median {s['median']:+5.1f}s   "
+            f"(late {s['late']}, early {s['early']}, on {s['on']})"
+        )
+        lines.append(
+            f"  end:   mean {e['mean']:+5.1f}s  median {e['median']:+5.1f}s   "
+            f"(late {e['late']}, early {e['early']}, on {e['on']})"
+        )
+        lines.append(
+            f"  length vs GT: shorter {length['shorter']}, "
+            f"longer {length['longer']}, same {length['same']}"
+        )
         lines.append("")
 
     lines.append("Boundary-error distribution (matched intervals):")
@@ -364,9 +421,12 @@ def format_report(report: dict) -> str:
     return "\n".join(lines)
 
 
-def plot_boundary_histogram(values: Sequence[float], path: Optional[Path] = None, bins: int = 20) -> Any:
+def plot_boundary_histogram(
+    values: Sequence[float], path: Optional[Path] = None, bins: int = 20
+) -> Any:
     """Optional matplotlib histogram (requires the `bench` extra)."""
     import matplotlib
+
     if path is not None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt

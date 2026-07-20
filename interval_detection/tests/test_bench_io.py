@@ -1,4 +1,5 @@
 """Tests for the bench label IO (no GUI)."""
+
 import sys
 from pathlib import Path
 
@@ -9,7 +10,9 @@ import labelio  # noqa: E402
 
 def test_save_and_load_intervals_round_trip(tmp_path: Path) -> None:
     labelio.save_intervals(
-        "123", [(120.0, 300.0, "threshold"), (60.0, 150.0, "vo2max")], labels_dir=tmp_path
+        "123",
+        [(120.0, 300.0, "threshold"), (60.0, 150.0, "vo2max")],
+        labels_dir=tmp_path,
     )
     ann = labelio.load_annotation("123", labels_dir=tmp_path)
     # sorted by start
@@ -25,14 +28,19 @@ def test_unlabelled_vs_empty_are_distinct(tmp_path: Path) -> None:
 
 
 def test_default_and_invalid_type_coerced_to_other(tmp_path: Path) -> None:
-    labelio.save_intervals("1", [(0.0, 90.0), (100.0, 200.0, "bogus")], labels_dir=tmp_path)
-    types = [iv[2] for iv in labelio.load_annotation("1", labels_dir=tmp_path)["intervals"]]
+    labelio.save_intervals(
+        "1", [(0.0, 90.0), (100.0, 200.0, "bogus")], labels_dir=tmp_path
+    )
+    types = [
+        iv[2] for iv in labelio.load_annotation("1", labels_dir=tmp_path)["intervals"]
+    ]
     assert types == ["other", "other"]
 
 
 def test_save_drops_zero_or_negative_length(tmp_path: Path) -> None:
-    labelio.save_intervals("1", [(100.0, 100.0, "vo2max"), (50.0, 80.0, "threshold")],
-                           labels_dir=tmp_path)
+    labelio.save_intervals(
+        "1", [(100.0, 100.0, "vo2max"), (50.0, 80.0, "threshold")], labels_dir=tmp_path
+    )
     ann = labelio.load_annotation("1", labels_dir=tmp_path)
     assert ann["intervals"] == [(50.0, 80.0, "threshold")]
 

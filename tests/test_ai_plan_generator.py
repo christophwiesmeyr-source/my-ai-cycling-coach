@@ -1,4 +1,5 @@
 """Tests for src/ai/plan_generator.py — pure helper functions only (no API calls)."""
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,24 +19,29 @@ class TestClearDerivedPlanData:
         log = tmp_path / "sessions_log.json"
         for f in (adapted, sessions, log):
             f.write_text("stale")
-        with patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", adapted), \
-             patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", sessions), \
-             patch("src.ai.plan_generator.SESSIONS_LOG_PATH", log):
+        with (
+            patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", adapted),
+            patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", sessions),
+            patch("src.ai.plan_generator.SESSIONS_LOG_PATH", log),
+        ):
             clear_derived_plan_data()
         assert not adapted.exists()
         assert not sessions.exists()
         assert not log.exists()
 
     def test_no_error_when_files_absent(self, tmp_path: Path) -> None:
-        with patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", tmp_path / "a.md"), \
-             patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", tmp_path / "s.csv"), \
-             patch("src.ai.plan_generator.SESSIONS_LOG_PATH", tmp_path / "l.json"):
+        with (
+            patch("src.ai.plan_generator.PLAN_ADAPTED_PATH", tmp_path / "a.md"),
+            patch("src.ai.plan_generator.SESSIONS_ADAPTED_PATH", tmp_path / "s.csv"),
+            patch("src.ai.plan_generator.SESSIONS_LOG_PATH", tmp_path / "l.json"),
+        ):
             clear_derived_plan_data()  # must not raise
 
 
 # ---------------------------------------------------------------------------
 # _build_plan_header
 # ---------------------------------------------------------------------------
+
 
 class TestBuildPlanHeader:
     def test_contains_all_provided_fields(self) -> None:
@@ -84,13 +90,18 @@ class TestBuildPlanHeader:
         header = _build_plan_header({})
         assert "| Parameter | Value |" in header
         # No data rows beyond the header
-        lines = [l for l in header.splitlines() if l.startswith("|") and "Parameter" not in l and "---" not in l]
+        lines = [
+            line
+            for line in header.splitlines()
+            if line.startswith("|") and "Parameter" not in line and "---" not in line
+        ]
         assert lines == []
 
 
 # ---------------------------------------------------------------------------
 # _build_plan_prompt
 # ---------------------------------------------------------------------------
+
 
 class TestBuildPlanPrompt:
     BASE_GOALS = {
@@ -143,6 +154,7 @@ class TestBuildPlanPrompt:
 # _build_sessions_prompt
 # ---------------------------------------------------------------------------
 
+
 class TestBuildSessionsPrompt:
     GOALS = {
         "current_date": "2025-04-01",
@@ -163,12 +175,15 @@ class TestBuildSessionsPrompt:
 
     def test_contains_csv_header_requirement(self) -> None:
         prompt = _build_sessions_prompt(self.PLAN, self.GOALS)
-        assert "date,week,phase,type,duration_min,intensity,target_power_pct_ftp" in prompt
+        assert (
+            "date,week,phase,type,duration_min,intensity,target_power_pct_ftp" in prompt
+        )
 
 
 # ---------------------------------------------------------------------------
 # _extract_csv
 # ---------------------------------------------------------------------------
+
 
 class TestExtractCsv:
     def test_clean_csv_returned_unchanged(self) -> None:

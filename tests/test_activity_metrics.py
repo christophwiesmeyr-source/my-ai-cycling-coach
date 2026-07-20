@@ -1,4 +1,5 @@
 """Tests for src/analysis/activity_metrics.py"""
+
 from typing import Any, Optional
 
 import numpy as np
@@ -8,7 +9,6 @@ import pytest
 from src.data.activity import Activity
 from src.analysis.activity_metrics import (
     elevation_changes,
-    moving_mask,
     normalized_power,
     pedaling_mask,
     representative_dt,
@@ -19,10 +19,17 @@ from src.analysis.activity_metrics import (
 )
 
 
-def _activity(streams: dict[str, np.ndarray], dt: float = 1.0,
-              elapsed: Optional[float] = None, moving_time: Optional[float] = None) -> Activity:
+def _activity(
+    streams: dict[str, np.ndarray],
+    dt: float = 1.0,
+    elapsed: Optional[float] = None,
+    moving_time: Optional[float] = None,
+) -> Activity:
     n = len(next(iter(streams.values())))
-    data: dict[str, Any] = {"timestamp": pd.to_datetime(0, unit="s") + pd.to_timedelta(np.arange(n) * dt, unit="s")}
+    data: dict[str, Any] = {
+        "timestamp": pd.to_datetime(0, unit="s")
+        + pd.to_timedelta(np.arange(n) * dt, unit="s")
+    }
     data.update(streams)
     return Activity(
         sport="Ride",
@@ -35,6 +42,7 @@ def _activity(streams: dict[str, np.ndarray], dt: float = 1.0,
 # ---------------------------------------------------------------------------
 # representative_dt
 # ---------------------------------------------------------------------------
+
 
 class TestRepresentativeDt:
     def test_uniform_1hz(self) -> None:
@@ -55,6 +63,7 @@ class TestRepresentativeDt:
 # ---------------------------------------------------------------------------
 # sample_weights
 # ---------------------------------------------------------------------------
+
 
 class TestSampleWeights:
     def test_uniform_weights_sum_to_span_plus_one_sample(self) -> None:
@@ -77,6 +86,7 @@ class TestSampleWeights:
 # ---------------------------------------------------------------------------
 # moving_mask / time_summary
 # ---------------------------------------------------------------------------
+
 
 class TestTimeSummary:
     def test_prefers_metadata_moving_time(self) -> None:
@@ -101,7 +111,9 @@ class TestTimeSummary:
         assert s["elapsed_s"] == 49
 
     def test_counts_multiple_stops(self) -> None:
-        moving = np.array([True] * 10 + [False] * 5 + [True] * 10 + [False] * 5 + [True] * 10)
+        moving = np.array(
+            [True] * 10 + [False] * 5 + [True] * 10 + [False] * 5 + [True] * 10
+        )
         act = _activity({"moving": moving})
         assert time_summary(act)["stops"] == 2
 
@@ -109,6 +121,7 @@ class TestTimeSummary:
 # ---------------------------------------------------------------------------
 # pedaling_mask
 # ---------------------------------------------------------------------------
+
 
 class TestPedalingMask:
     def test_uses_cadence_when_present(self) -> None:
@@ -135,6 +148,7 @@ class TestPedalingMask:
 # ---------------------------------------------------------------------------
 # elevation_changes
 # ---------------------------------------------------------------------------
+
 
 class TestElevationChanges:
     def test_pure_climb_then_descent(self) -> None:
@@ -167,6 +181,7 @@ class TestElevationChanges:
 # ---------------------------------------------------------------------------
 # normalized_power / total_work_kj / weighted_average
 # ---------------------------------------------------------------------------
+
 
 class TestPowerMetrics:
     def test_np_of_constant_power_equals_power(self) -> None:

@@ -1,4 +1,5 @@
 """Tests for src/ai/client.py"""
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +37,7 @@ class TestLoadApiKey:
 class TestGetClient:
     def test_returns_anthropic_client(self) -> None:
         import anthropic
+
         with patch("src.ai.client._load_api_key", return_value="test_key"):
             client = get_client()
         assert isinstance(client, anthropic.Anthropic)

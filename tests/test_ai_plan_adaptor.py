@@ -1,4 +1,5 @@
 """Tests for src/ai/plan_adaptor.py — pure helper functions only (no API calls)."""
+
 import json
 from pathlib import Path
 from unittest.mock import patch

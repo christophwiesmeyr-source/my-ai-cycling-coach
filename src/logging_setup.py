@@ -1,4 +1,5 @@
 """App-wide logging configuration — call configure_logging() once at startup."""
+
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -14,9 +15,9 @@ def configure_logging(level: int = logging.DEBUG) -> None:
     handler = RotatingFileHandler(
         LOG_PATH, maxBytes=_MAX_BYTES, backupCount=_BACKUP_COUNT, encoding="utf-8"
     )
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
-    ))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s")
+    )
 
     root = logging.getLogger()
     root.setLevel(level)

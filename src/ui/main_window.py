@@ -1,28 +1,39 @@
 """Main UI window for data visualization"""
+
 import datetime
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QBoxLayout, QPushButton,
-    QLabel, QComboBox, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget,
-    QCheckBox, QMessageBox
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QBoxLayout,
+    QPushButton,
+    QLabel,
+    QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QTabWidget,
+    QCheckBox,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt
-import pyqtgraph as pg
 
 from src.constants import APP_NAME
 from src.data import Activity, IntervalsClient, IntervalsClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
 from .training_tab import TrainingTab
-        
+
 
 LABEL_STYLE_HEADER = "font-weight: bold; font-size: 14px;"
 
 
 class MainWindow(QMainWindow):
     """Main application window"""
-    
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -102,10 +113,14 @@ class MainWindow(QMainWindow):
         self.table_activities = QTableWidget(0, 3)
         self.table_activities.setMinimumWidth(302)
         self.table_activities.setHorizontalHeaderLabels(["Date", "Distance", "Time"])
-        if (vh := self.table_activities.verticalHeader()):
+        if vh := self.table_activities.verticalHeader():
             vh.setVisible(False)
-        self.table_activities.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table_activities.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table_activities.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self.table_activities.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection
+        )
         self.table_activities.cellClicked.connect(self._on_activity_table_selected)
         self.table_activities.setSortingEnabled(False)  # enable after filling
         layout.addWidget(self.table_activities)
@@ -170,7 +185,9 @@ class MainWindow(QMainWindow):
         self.activity_map.clear()
         self.activity_metadatas = []
 
-        one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
+        one_year_ago = datetime.datetime.now(
+            datetime.timezone.utc
+        ) - datetime.timedelta(days=365)
         activities = self.activity_client.list_activities(one_year_ago)
 
         self.activity_metadatas = activities
@@ -179,18 +196,32 @@ class MainWindow(QMainWindow):
             row = self.table_activities.rowCount()
             self.table_activities.insertRow(row)
 
-            start_date = activity.get('start_date_local') or activity.get('start_date') or ''
+            start_date = (
+                activity.get("start_date_local") or activity.get("start_date") or ""
+            )
             try:
-                date_value = datetime.datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                date_text = date_value.strftime('%Y-%m-%d %H:%M')
+                date_value = datetime.datetime.fromisoformat(
+                    start_date.replace("Z", "+00:00")
+                )
+                date_text = date_value.strftime("%Y-%m-%d %H:%M")
             except Exception:
-                date_text = start_date or 'Unknown'
+                date_text = start_date or "Unknown"
 
-            distance_text = f"{activity.get('distance', 0) / 1000:.1f} km" if activity.get('distance') else 'N/A'
-            duration_text = str(datetime.timedelta(seconds=activity.get('elapsed_time', 0))) if activity.get('elapsed_time') else 'N/A'
+            distance_text = (
+                f"{activity.get('distance', 0) / 1000:.1f} km"
+                if activity.get("distance")
+                else "N/A"
+            )
+            duration_text = (
+                str(datetime.timedelta(seconds=activity.get("elapsed_time", 0)))
+                if activity.get("elapsed_time")
+                else "N/A"
+            )
 
             date_item = QTableWidgetItem(date_text)
-            activity_id = activity.get('id')  # opaque id (e.g. intervals.icu's "i123456"), not necessarily numeric
+            activity_id = activity.get(
+                "id"
+            )  # opaque id (e.g. intervals.icu's "i123456"), not necessarily numeric
             if activity_id is None:
                 continue
             date_item.setData(Qt.ItemDataRole.UserRole, activity_id)
@@ -237,10 +268,14 @@ class MainWindow(QMainWindow):
             self.current_activity = self.activity_cache[activity_id]
         else:
             try:
-                self.current_activity = self.activity_client.download_activity(activity_id)
+                self.current_activity = self.activity_client.download_activity(
+                    activity_id
+                )
                 self.activity_cache[activity_id] = self.current_activity
             except IntervalsClientError as e:
-                QMessageBox.critical(self, "Download Error", f"Failed to download activity: {str(e)}")
+                QMessageBox.critical(
+                    self, "Download Error", f"Failed to download activity: {str(e)}"
+                )
                 return
 
         self._update_metric_dropdowns()
@@ -291,11 +326,11 @@ class MainWindow(QMainWindow):
         secondary_filtered = self.checkbox_secondary_filter.isChecked()
 
         self.plot_widget.plot_activity(
-            self.current_activity, 
-            primary_metric, 
+            self.current_activity,
+            primary_metric,
             secondary_metric,
             primary_filtered=primary_filtered,
-            secondary_filtered=secondary_filtered
+            secondary_filtered=secondary_filtered,
         )
 
         try:
@@ -315,12 +350,10 @@ class MainWindow(QMainWindow):
             self.selection_stats_text.setText("No selection")
             return
 
-        statistics_string = self._format_stats_output(
-            start_idx, end_idx
-        )
+        statistics_string = self._format_stats_output(start_idx, end_idx)
 
         self.selection_stats_text.setText(statistics_string)
-        
+
     def _format_stats_output(self, start_idx: int, end_idx: int) -> str:
         if not self.current_activity:
             return ""

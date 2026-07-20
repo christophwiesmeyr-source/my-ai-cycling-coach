@@ -14,6 +14,7 @@ place. Two design decisions worth knowing:
   fool a threshold). If the source gives us no moving stream, moving-only
   stats are simply omitted rather than guessed.
 """
+
 from typing import Optional
 
 import numpy as np
@@ -42,7 +43,9 @@ def representative_dt(time_array: np.ndarray) -> float:
     return float(np.median(diffs))
 
 
-def sample_weights(time_array: np.ndarray, gap_threshold: Optional[float] = None) -> np.ndarray:
+def sample_weights(
+    time_array: np.ndarray, gap_threshold: Optional[float] = None
+) -> np.ndarray:
     """Per-sample duration weights in seconds, robust to gaps.
 
     ``w[i]`` is the time the i-th sample represents (the interval preceding it).
@@ -80,7 +83,9 @@ def moving_mask(activity: Activity) -> Optional[np.ndarray]:
 PEDALING_CADENCE_RPM = 3
 
 
-def pedaling_mask(activity: Activity, cadence_threshold: float = PEDALING_CADENCE_RPM) -> Optional[np.ndarray]:
+def pedaling_mask(
+    activity: Activity, cadence_threshold: float = PEDALING_CADENCE_RPM
+) -> Optional[np.ndarray]:
     """Per-sample mask of samples where the rider is pedalling.
 
     Prefers cadence (>= threshold); falls back to positive power when there is no
@@ -88,7 +93,10 @@ def pedaling_mask(activity: Activity, cadence_threshold: float = PEDALING_CADENC
     """
     cadence = activity.get_time_series("cadence")
     if cadence is not None and len(cadence) > 0:
-        return np.nan_to_num(np.asarray(cadence, dtype=float), nan=0.0) >= cadence_threshold
+        return (
+            np.nan_to_num(np.asarray(cadence, dtype=float), nan=0.0)
+            >= cadence_threshold
+        )
     power = activity.get_time_series("power")
     if power is not None and len(power) > 0:
         return np.nan_to_num(np.asarray(power, dtype=float), nan=0.0) > 0
@@ -135,8 +143,9 @@ def time_summary(activity: Activity) -> dict:
     return result
 
 
-def elevation_changes(altitude: np.ndarray, time_array: np.ndarray,
-                      smooth_window_s: float = 20.0) -> tuple[float, float]:
+def elevation_changes(
+    altitude: np.ndarray, time_array: np.ndarray, smooth_window_s: float = 20.0
+) -> tuple[float, float]:
     """Total ascent and descent in metres from a (noisy) altitude stream.
 
     NaNs are interpolated and the signal is smoothed before summing positive /
@@ -157,15 +166,18 @@ def elevation_changes(altitude: np.ndarray, time_array: np.ndarray,
     # it introduces no edge bias, which would otherwise fabricate ascent/descent
     # at the start and end of the ride.
     window = max(1, int(round(smooth_window_s / representative_dt(time_array))))
-    smoothed = pd.Series(alt).rolling(window, center=True, min_periods=1).mean().to_numpy()
+    smoothed = (
+        pd.Series(alt).rolling(window, center=True, min_periods=1).mean().to_numpy()
+    )
     diffs = np.diff(smoothed)
     ascent = float(np.sum(diffs[diffs > 0]))
     descent = float(-np.sum(diffs[diffs < 0]))
     return ascent, descent
 
 
-def weighted_average(series: np.ndarray, time_array: np.ndarray,
-                     mask: Optional[np.ndarray] = None) -> Optional[float]:
+def weighted_average(
+    series: np.ndarray, time_array: np.ndarray, mask: Optional[np.ndarray] = None
+) -> Optional[float]:
     """Time-weighted mean over valid (and optionally masked) samples."""
     if series is None or len(series) == 0:
         return None
@@ -190,7 +202,7 @@ def normalized_power(power: np.ndarray, time_array: np.ndarray) -> Optional[floa
     if len(p) < window:
         return None
     rolling = np.convolve(p, np.ones(window) / window, mode="valid")
-    return float(np.mean(rolling ** 4) ** 0.25)
+    return float(np.mean(rolling**4) ** 0.25)
 
 
 def total_work_kj(power: np.ndarray, time_array: np.ndarray) -> Optional[float]:

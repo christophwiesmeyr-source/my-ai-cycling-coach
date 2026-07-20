@@ -13,6 +13,7 @@ Controls:
     PageDown    next activity (saves first)
     PageUp      previous activity (saves first)
 """
+
 import sys
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -32,8 +33,10 @@ class Labeler(QtWidgets.QMainWindow):
         super().__init__()
         self.ids = list(activity_ids)
         self.idx = 0
-        self.regions: list[Any] = []  # list[pg.LinearRegionItem], each with a .itype attribute
-        self._dirty = False          # user edited intervals since load
+        self.regions: list[
+            Any
+        ] = []  # list[pg.LinearRegionItem], each with a .itype attribute
+        self._dirty = False  # user edited intervals since load
         self._loaded_labeled = False  # activity already had a labelled state
 
         self.plot = pg.PlotWidget()
@@ -59,9 +62,11 @@ class Labeler(QtWidgets.QMainWindow):
         side.addWidget(self.annot_label)
         side.addWidget(self.meta_label)
         side.addWidget(self.smooth_check)
-        for label, slot in [("Add (A)", self.add_region),
-                            ("Remove (Del)", self.remove_selected),
-                            ("Save (Ctrl+S)", self.save)]:
+        for label, slot in [
+            ("Add (A)", self.add_region),
+            ("Remove (Del)", self.remove_selected),
+            ("Save (Ctrl+S)", self.save),
+        ]:
             btn = QtWidgets.QPushButton(label)
             btn.clicked.connect(slot)
             side.addWidget(btn)
@@ -82,11 +87,13 @@ class Labeler(QtWidgets.QMainWindow):
         layout.addLayout(side)
         self.setCentralWidget(central)
 
-        for seq, slot in [("A", self.add_region),
-                         (QtCore.Qt.Key.Key_Delete, self.remove_selected),
-                         ("Ctrl+S", self.save),
-                         (QtCore.Qt.Key.Key_PageDown, self.next),
-                         (QtCore.Qt.Key.Key_PageUp, self.prev)]:
+        for seq, slot in [
+            ("A", self.add_region),
+            (QtCore.Qt.Key.Key_Delete, self.remove_selected),
+            ("Ctrl+S", self.save),
+            (QtCore.Qt.Key.Key_PageDown, self.next),
+            (QtCore.Qt.Key.Key_PageUp, self.prev),
+        ]:
             QtGui.QShortcut(QtGui.QKeySequence(seq), self).activated.connect(slot)
 
         self.resize(1100, 600)
@@ -106,7 +113,7 @@ class Labeler(QtWidgets.QMainWindow):
         ann = labelio.load_annotation(self.current_id)
         self._loaded_labeled = ann["intervals"] is not None
         self._dirty = False
-        for s, e, itype in (ann["intervals"] or []):
+        for s, e, itype in ann["intervals"] or []:
             self._make_region(s, e, itype)
         place = "indoor" if ann["indoor"] else "outdoor"
         self.meta_label.setText(f"{ann['sport_type'] or '?'} · {place}")
@@ -116,17 +123,27 @@ class Labeler(QtWidgets.QMainWindow):
     def _update_annot_label(self) -> None:
         if self._loaded_labeled:
             self.annot_label.setText("Annotated")
-            self.annot_label.setStyleSheet("color: green; font-weight: bold; font-size: 14pt;")
+            self.annot_label.setStyleSheet(
+                "color: green; font-weight: bold; font-size: 14pt;"
+            )
         else:
             self.annot_label.setText("Not Annotated")
-            self.annot_label.setStyleSheet("color: red; font-weight: bold; font-size: 14pt;")
+            self.annot_label.setStyleSheet(
+                "color: red; font-weight: bold; font-size: 14pt;"
+            )
 
     def _redraw_curve(self) -> None:
         """Redraw the power trace, smoothed or raw, without touching intervals."""
-        p = moving_average(self._t, self._p) if self.smooth_check.isChecked() else self._p
+        p = (
+            moving_average(self._t, self._p)
+            if self.smooth_check.isChecked()
+            else self._p
+        )
         self.curve.setData(self._t, p)
 
-    def _make_region(self, start: float, end: float, itype: str = labelio.DEFAULT_TYPE) -> Any:
+    def _make_region(
+        self, start: float, end: float, itype: str = labelio.DEFAULT_TYPE
+    ) -> Any:
         region = pg.LinearRegionItem([start, end], brush=pg.mkBrush(255, 140, 0, 60))
         region.itype = itype
         region.sigRegionChangeFinished.connect(self._on_region_changed)
@@ -207,7 +224,7 @@ class Labeler(QtWidgets.QMainWindow):
         self._dirty = False
         self._loaded_labeled = True
         self._update_annot_label()
-        if (bar := self.statusBar()):
+        if bar := self.statusBar():
             bar.showMessage(f"saved {path}", 3000)
 
     def _autosave(self) -> None:
@@ -229,8 +246,10 @@ class Labeler(QtWidgets.QMainWindow):
 def main() -> int:
     ids = labelio.list_activity_ids()
     if not ids:
-        print(f"No activities in {labelio.ACTIVITIES_DIR}.\n"
-              f"Export some first, e.g.:  python -m src.data.export_for_bench <activity_id>")
+        print(
+            f"No activities in {labelio.ACTIVITIES_DIR}.\n"
+            f"Export some first, e.g.:  python -m src.data.export_for_bench <activity_id>"
+        )
         return 1
     app = QtWidgets.QApplication(sys.argv)
     window = Labeler(ids)

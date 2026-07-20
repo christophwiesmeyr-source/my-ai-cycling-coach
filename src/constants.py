@@ -1,10 +1,13 @@
 """Application-wide constants — single source of truth for names, paths, and settings"""
+
 import sys
 from pathlib import Path
 
 APP_NAME = "My AI Cycling Coach"
 _test_mode = "--test" in sys.argv
-APP_DIR = Path.home() / (".my-ai-cycling-coach-test" if _test_mode else ".my-ai-cycling-coach")
+APP_DIR = Path.home() / (
+    ".my-ai-cycling-coach-test" if _test_mode else ".my-ai-cycling-coach"
+)
 
 # Persisted file paths
 INTERVALS_CONFIG_PATH = APP_DIR / "intervals_config.json"

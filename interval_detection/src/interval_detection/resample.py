@@ -3,6 +3,7 @@
 A uniform grid keeps the detection algorithm simple (fixed-width windows,
 clean changepoint indices) and gives any future ML model consistent inputs.
 """
+
 from typing import Tuple
 
 import numpy as np
@@ -23,7 +24,9 @@ def _fill_nans(values: np.ndarray) -> np.ndarray:
     return v
 
 
-def resample_to_1hz(time_s: np.ndarray, power: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def resample_to_1hz(
+    time_s: np.ndarray, power: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
     """Resample (time_s, power) onto integer-second grid 0..floor(duration).
 
     Args:

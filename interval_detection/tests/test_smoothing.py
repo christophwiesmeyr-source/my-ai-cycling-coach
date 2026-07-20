@@ -1,4 +1,5 @@
 """Tests for the shared moving-average smoother."""
+
 import numpy as np
 
 from interval_detection import moving_average
@@ -26,14 +27,17 @@ def test_edges_stay_in_range_no_zero_dip() -> None:
 def test_window_from_median_dt() -> None:
     # 2 s sampling, 20 s window -> 10-sample average
     t = np.arange(0, 200, 2, dtype=float)
-    p = np.zeros(len(t)); p[len(t) // 2] = 100.0
+    p = np.zeros(len(t))
+    p[len(t) // 2] = 100.0
     sm = moving_average(t, p)
     # the spike is spread over ~10 samples, so its peak drops to ~100/10
     assert sm.max() < 20.0
 
 
 def test_short_input_returned_unchanged() -> None:
-    assert np.array_equal(moving_average(np.array([0.0]), np.array([200.0])), np.array([200.0]))
+    assert np.array_equal(
+        moving_average(np.array([0.0]), np.array([200.0])), np.array([200.0])
+    )
 
 
 def test_default_window_is_20s() -> None:

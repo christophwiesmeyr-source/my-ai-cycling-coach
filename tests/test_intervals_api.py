@@ -6,6 +6,7 @@ page couldn't be fully introspected offline. These tests pin the mapping we
 implemented so a live smoke test has a clear diff to compare against, and so
 the mapping doesn't silently drift once it *is* verified.
 """
+
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -53,44 +54,54 @@ class TestInit:
 
 
 class TestListActivities:
-    def test_success_normalizes_and_uses_basic_auth(self, mock_client: IntervalsClient) -> None:
+    def test_success_normalizes_and_uses_basic_auth(
+        self, mock_client: IntervalsClient
+    ) -> None:
         mock_response = Mock(status_code=200)
-        mock_response.json.return_value = [{
-            "id": "i67890",
-            "start_date_local": "2026-06-01T10:00:00",
-            "type": "Ride",
-            "distance": 40000,
-            "elapsed_time": 3600,
-            "average_watts": 210,
-            "average_heartrate": 145,
-            "trainer": False,
-        }]
+        mock_response.json.return_value = [
+            {
+                "id": "i67890",
+                "start_date_local": "2026-06-01T10:00:00",
+                "type": "Ride",
+                "distance": 40000,
+                "elapsed_time": 3600,
+                "average_watts": 210,
+                "average_heartrate": 145,
+                "trainer": False,
+            }
+        ]
         with patch("requests.get", return_value=mock_response) as mock_get:
             activities = mock_client.list_activities(datetime(2026, 1, 1))
 
-        assert activities == [{
-            "id": "i67890",
-            "start_date_local": "2026-06-01T10:00:00",
-            "sport_type": "Ride",
-            "distance": 40000,
-            "elapsed_time": 3600,
-            "average_watts": 210,
-            "average_heartrate": 145,
-            "trainer": False,
-        }]
+        assert activities == [
+            {
+                "id": "i67890",
+                "start_date_local": "2026-06-01T10:00:00",
+                "sport_type": "Ride",
+                "distance": 40000,
+                "elapsed_time": 3600,
+                "average_watts": 210,
+                "average_heartrate": 145,
+                "trainer": False,
+            }
+        ]
         _, kwargs = mock_get.call_args
         assert kwargs["auth"] == ("API_KEY", "testkey")
         assert "athlete/i12345/activities" in mock_get.call_args[0][0]
         assert kwargs["params"]["oldest"] == "2026-01-01T00:00:00"
 
-    def test_falls_back_to_icu_prefixed_and_alt_keys(self, mock_client: IntervalsClient) -> None:
+    def test_falls_back_to_icu_prefixed_and_alt_keys(
+        self, mock_client: IntervalsClient
+    ) -> None:
         mock_response = Mock(status_code=200)
-        mock_response.json.return_value = [{
-            "id": "i1",
-            "start_date": "2026-01-02T08:00:00",  # no start_date_local
-            "sport_type": "VirtualRide",           # no "type"
-            "icu_average_watts": 180,               # no "average_watts"
-        }]
+        mock_response.json.return_value = [
+            {
+                "id": "i1",
+                "start_date": "2026-01-02T08:00:00",  # no start_date_local
+                "sport_type": "VirtualRide",  # no "type"
+                "icu_average_watts": 180,  # no "average_watts"
+            }
+        ]
         with patch("requests.get", return_value=mock_response):
             activities = mock_client.list_activities(datetime(2026, 1, 1))
         a = activities[0]
@@ -106,6 +117,7 @@ class TestListActivities:
 
     def test_network_error_raises(self, mock_client: IntervalsClient) -> None:
         import requests
+
         with patch("requests.get", side_effect=requests.RequestException("boom")):
             with pytest.raises(IntervalsClientError, match="boom"):
                 mock_client.list_activities(datetime(2026, 1, 1))
@@ -123,7 +135,9 @@ class TestDownloadActivity:
             {"type": "velocity_smooth", "data": [8.0] * n},
         ]
 
-    def test_builds_activity_with_all_streams(self, mock_client: IntervalsClient) -> None:
+    def test_builds_activity_with_all_streams(
+        self, mock_client: IntervalsClient
+    ) -> None:
         metadata = {
             "start_date_local": "2026-06-01T10:00:00",
             "type": "Ride",
@@ -131,8 +145,10 @@ class TestDownloadActivity:
             "elapsed_time": 3600,
             "moving_time": 3500,
         }
-        responses = [Mock(status_code=200, json=Mock(return_value=metadata)),
-                    Mock(status_code=200, json=Mock(return_value=self._streams()))]
+        responses = [
+            Mock(status_code=200, json=Mock(return_value=metadata)),
+            Mock(status_code=200, json=Mock(return_value=self._streams())),
+        ]
         with patch("requests.get", side_effect=responses):
             activity = mock_client.download_activity("i67890")
 
@@ -147,20 +163,29 @@ class TestDownloadActivity:
 
     def test_missing_time_stream_raises(self, mock_client: IntervalsClient) -> None:
         metadata = {"start_date_local": "2026-06-01T10:00:00", "type": "Ride"}
-        responses = [Mock(status_code=200, json=Mock(return_value=metadata)),
-                    Mock(status_code=200, json=Mock(return_value=[{"type": "watts", "data": [1, 2]}]))]
+        responses = [
+            Mock(status_code=200, json=Mock(return_value=metadata)),
+            Mock(
+                status_code=200,
+                json=Mock(return_value=[{"type": "watts", "data": [1, 2]}]),
+            ),
+        ]
         with patch("requests.get", side_effect=responses):
             with pytest.raises(IntervalsClientError, match="No time stream"):
                 mock_client.download_activity("i1")
 
     def test_missing_start_time_raises(self, mock_client: IntervalsClient) -> None:
-        responses = [Mock(status_code=200, json=Mock(return_value={})),
-                    Mock(status_code=200, json=Mock(return_value=self._streams()))]
+        responses = [
+            Mock(status_code=200, json=Mock(return_value={})),
+            Mock(status_code=200, json=Mock(return_value=self._streams())),
+        ]
         with patch("requests.get", side_effect=responses):
             with pytest.raises(IntervalsClientError, match="missing start time"):
                 mock_client.download_activity("i1")
 
     def test_detail_http_error_raises(self, mock_client: IntervalsClient) -> None:
-        with patch("requests.get", return_value=Mock(status_code=404, text="not found")):
+        with patch(
+            "requests.get", return_value=Mock(status_code=404, text="not found")
+        ):
             with pytest.raises(IntervalsClientError, match="404"):
                 mock_client.download_activity("i1")

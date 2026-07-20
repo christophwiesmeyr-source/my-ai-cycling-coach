@@ -18,6 +18,7 @@ Variability of power *within* an interval turned out not to separate real
 intervals from steady climbs (both are low-variability), so it is intentionally
 not used; the power-duration rule is the discriminator instead.
 """
+
 from typing import List, Optional
 
 import numpy as np
@@ -42,9 +43,9 @@ NO_FTP_MULTIPLIER = 1.2
 # Each entry is (intensity strictly below this fraction of FTP, min seconds).
 # Only used when FTP is known.
 DURATION_FLOORS = [
-    (0.90, 420.0),         # < 90% FTP : tempo / low sweet spot (nom. 8 min)
-    (1.00, 255.0),         # 90-100%   : sweet spot / sub-thresh (nom. 5 min)
-    (1.12, 150.0),         # 100-112%  : threshold / low VO2     (nom. 3 min)
+    (0.90, 420.0),  # < 90% FTP : tempo / low sweet spot (nom. 8 min)
+    (1.00, 255.0),  # 90-100%   : sweet spot / sub-thresh (nom. 5 min)
+    (1.12, 150.0),  # 100-112%  : threshold / low VO2     (nom. 3 min)
     (float("inf"), 75.0),  # > 112%    : VO2 / anaerobic         (nom. 1.5 min)
 ]
 

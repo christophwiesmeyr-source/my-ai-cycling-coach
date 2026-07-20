@@ -18,16 +18,13 @@ from .client import get_client
 
 
 def clear_derived_plan_data() -> None:
-    """Delete data derived from a previous plan: the adapted plan, its session
-    list, and the completion log (keyed by the old plan's dates). Call after a
-    new plan is generated — that data is meaningless against the new plan.
-    """
+    # The adapted plan, its session list, and the completion log are all keyed
+    # to the old plan's dates, so they're meaningless once a new plan replaces it.
     for path in (PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH):
         path.unlink(missing_ok=True)
 
 
 def generate_plan(goals: dict) -> str:
-    """Generate a structured training plan from user goals and save to plan_original.md."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
@@ -49,7 +46,6 @@ def generate_plan(goals: dict) -> str:
 
 
 def generate_sessions(plan_text: str, goals: dict) -> str:
-    """Generate a structured session CSV from the narrative plan and save to sessions_original.csv."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
@@ -77,7 +73,6 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 
 
 def _build_plan_header(goals: dict) -> str:
-    """Markdown block recording the parameter values used to generate this plan."""
     rows = []
     for gm in GOAL_FIELDS:
         v = goals.get(gm.key)
@@ -176,7 +171,6 @@ def _build_sessions_prompt(plan_text: str, goals: dict) -> str:
 
 
 def _extract_csv(raw: str) -> str:
-    """Strip any preamble/postamble, returning only lines from the header row onwards."""
     for i, line in enumerate(raw.splitlines()):
         if line.strip().startswith("date,"):
             return "\n".join(raw.splitlines()[i:])

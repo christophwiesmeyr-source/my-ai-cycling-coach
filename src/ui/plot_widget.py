@@ -57,7 +57,6 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         )
 
     def _update_views(self) -> None:
-        """Keep secondary view geometry and axis sync with primary plot"""
         self.secondary_view.setGeometry(self.plot.getViewBox().sceneBoundingRect())
         self.secondary_view.linkedViewChanged(
             self.plot.getViewBox(), self.secondary_view.XAxis
@@ -71,14 +70,6 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         primary_filtered: bool = False,
         secondary_filtered: bool = False,
     ) -> None:
-        """
-        Plot activity data
-
-        Args:
-            activity: Activity object to plot
-            primary_metric: Name of metric for primary plot
-            secondary_metric: Name of metric for secondary plot
-        """
         self.current_activity = activity
         self.primary_metric = primary_metric
         self.secondary_metric = secondary_metric
@@ -139,7 +130,6 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         self.secondary_view.autoRange()
 
     def _on_selection_changed(self) -> None:
-        """Handle selection region change"""
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
 
@@ -163,7 +153,6 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         self.selection_changed.emit(start_idx, end_idx)
 
     def reset_view(self) -> None:
-        """Reset plot to show all data"""
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
 

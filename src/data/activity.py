@@ -21,7 +21,6 @@ class Activity:
     data: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __post_init__(self) -> None:
-        """Ensure data is a proper DataFrame"""
         if isinstance(self.data, dict):
             self.data = pd.DataFrame(self.data)
         elif not isinstance(self.data, pd.DataFrame):
@@ -33,17 +32,6 @@ class Activity:
         start_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
     ) -> np.ndarray:
-        """
-        Get a time series for a specific field (power, hr, etc.)
-
-        Args:
-            field_name: Column name to retrieve
-            start_idx: Start index (inclusive)
-            end_idx: End index (exclusive)
-
-        Returns:
-            NumPy array of values
-        """
         if field_name not in self.data.columns:
             return np.array([])
 
@@ -57,16 +45,6 @@ class Activity:
     def get_time_array(
         self, start_idx: Optional[int] = None, end_idx: Optional[int] = None
     ) -> np.ndarray:
-        """
-        Get the timestamp array (in seconds from start)
-
-        Args:
-            start_idx: Start index (inclusive)
-            end_idx: End index (exclusive)
-
-        Returns:
-            NumPy array of timestamps in seconds
-        """
         if "timestamp" not in self.data.columns or len(self.data) == 0:
             return np.array([])
 
@@ -80,7 +58,6 @@ class Activity:
         return (timestamps - timestamps[0]).astype("timedelta64[s]").astype(float)
 
     def get_data_range(self) -> tuple[float, float]:
-        """Get the time range of the activity in seconds"""
         if len(self.data) == 0:
             return (0, 0)
 
@@ -92,7 +69,6 @@ class Activity:
 
     @property
     def duration_seconds(self) -> float:
-        """Total activity duration in seconds"""
         if len(self.data) == 0:
             return 0
         _, end = self.get_data_range()
@@ -100,7 +76,6 @@ class Activity:
 
     @property
     def available_metrics(self) -> list[str]:
-        """Get list of available data metrics"""
         # 'moving' is a boolean flag from the data source, not a plottable measurement.
         exclude = {"timestamp", "moving"}
         return [col for col in self.data.columns if col not in exclude]

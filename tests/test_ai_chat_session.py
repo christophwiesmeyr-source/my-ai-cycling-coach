@@ -132,7 +132,7 @@ class TestBuildSystem:
 
     @staticmethod
     def _text(session: ChatSession) -> str:
-        """Concatenated text of all system blocks (build_system returns blocks)."""
+        # build_system() returns content blocks, not plain text — flatten for assertions.
         return "".join(block["text"] for block in session.build_system())
 
     def test_always_contains_base_prompt(self, tmp_path: Path) -> None:

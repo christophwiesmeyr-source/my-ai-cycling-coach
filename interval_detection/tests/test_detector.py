@@ -57,7 +57,6 @@ def test_intensity_threshold_fallback_on_mean_positive() -> None:
 def _signal(
     blocks: list[tuple[int, int]], total: int, base: float = 100.0, high: float = 250.0
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Power array: `base` everywhere, `high` inside each (start, end) block."""
     t = np.arange(total, dtype=float)
     p = np.full(total, base)
     for s, e in blocks:

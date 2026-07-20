@@ -70,7 +70,6 @@ def _build_log_section() -> str:
 
 
 def adapt_plan(activity_client: IntervalsClient) -> str:
-    """Run the agentic loop to adapt the original plan using recent activity data."""
     if not PLAN_ORIGINAL_PATH.exists():
         raise FileNotFoundError(
             "No original plan found. Generate a plan first using the Training tab."

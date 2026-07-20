@@ -29,11 +29,8 @@ MIN_GAP_SECONDS = 5.0
 
 
 def representative_dt(time_array: np.ndarray) -> float:
-    """Robust sampling interval (seconds): the median of positive time deltas.
-
-    Use this instead of ``time[1] - time[0]`` — the first delta is not
-    representative when the recording is non-uniform or starts with a gap.
-    """
+    # Median of positive deltas, not time[1] - time[0] — the first delta is
+    # not representative when the recording is non-uniform or starts with a gap.
     if time_array is None or len(time_array) < 2:
         return 1.0
     diffs = np.diff(np.asarray(time_array, dtype=float))
@@ -46,12 +43,9 @@ def representative_dt(time_array: np.ndarray) -> float:
 def sample_weights(
     time_array: np.ndarray, gap_threshold: Optional[float] = None
 ) -> np.ndarray:
-    """Per-sample duration weights in seconds, robust to gaps.
-
-    ``w[i]`` is the time the i-th sample represents (the interval preceding it).
-    Sample 0 and any pause gap are set to the median interval so a pause's
-    wall-clock duration is not charged to the sample that resumes recording.
-    """
+    # w[i] is the time the i-th sample represents (the interval preceding it).
+    # Sample 0 and any pause gap are set to the median interval so a pause's
+    # wall-clock duration is not charged to the sample that resumes recording.
     n = len(time_array) if time_array is not None else 0
     if n == 0:
         return np.array([])
@@ -71,7 +65,6 @@ def sample_weights(
 
 
 def moving_mask(activity: Activity) -> Optional[np.ndarray]:
-    """Per-sample moving flag as a boolean array, or None if the source doesn't provide one."""
     series = activity.get_time_series("moving")
     if series is None or len(series) == 0:
         return None
@@ -86,11 +79,6 @@ PEDALING_CADENCE_RPM = 3
 def pedaling_mask(
     activity: Activity, cadence_threshold: float = PEDALING_CADENCE_RPM
 ) -> Optional[np.ndarray]:
-    """Per-sample mask of samples where the rider is pedalling.
-
-    Prefers cadence (>= threshold); falls back to positive power when there is no
-    cadence stream. Returns None if neither stream is available.
-    """
     cadence = activity.get_time_series("cadence")
     if cadence is not None and len(cadence) > 0:
         return (
@@ -104,7 +92,6 @@ def pedaling_mask(
 
 
 def _count_stops(mask: np.ndarray) -> int:
-    """Number of contiguous non-moving runs in a moving mask."""
     if mask is None or len(mask) == 0:
         return 0
     not_moving = (~mask).astype(int)
@@ -115,13 +102,6 @@ def _count_stops(mask: np.ndarray) -> int:
 
 
 def time_summary(activity: Activity) -> dict:
-    """Elapsed / moving / stopped seconds (+ stop count) where derivable.
-
-    Headline times prefer activity metadata (``total_elapsed_time`` /
-    ``total_moving_time``); moving time falls back to summing weighted
-    moving-flagged samples. ``moving_s`` / ``stopped_s`` are omitted when moving
-    cannot be determined at all.
-    """
     time_array = activity.get_time_array()
     elapsed = getattr(activity, "total_elapsed_time", None)
     if not elapsed:
@@ -146,12 +126,9 @@ def time_summary(activity: Activity) -> dict:
 def elevation_changes(
     altitude: np.ndarray, time_array: np.ndarray, smooth_window_s: float = 20.0
 ) -> tuple[float, float]:
-    """Total ascent and descent in metres from a (noisy) altitude stream.
-
-    NaNs are interpolated and the signal is smoothed before summing positive /
-    negative deltas, which suppresses GPS/barometric jitter that would otherwise
-    inflate both figures.
-    """
+    # NaNs are interpolated and the signal is smoothed before summing positive /
+    # negative deltas, which suppresses GPS/barometric jitter that would
+    # otherwise inflate both figures.
     if altitude is None or len(altitude) < 2:
         return 0.0, 0.0
     alt = np.asarray(altitude, dtype=float)
@@ -178,7 +155,6 @@ def elevation_changes(
 def weighted_average(
     series: np.ndarray, time_array: np.ndarray, mask: Optional[np.ndarray] = None
 ) -> Optional[float]:
-    """Time-weighted mean over valid (and optionally masked) samples."""
     if series is None or len(series) == 0:
         return None
     s = np.asarray(series, dtype=float)
@@ -194,7 +170,7 @@ def weighted_average(
 
 
 def normalized_power(power: np.ndarray, time_array: np.ndarray) -> Optional[float]:
-    """Coggan Normalized Power: 30 s rolling average, 4th-power mean, 4th root."""
+    # Coggan Normalized Power formula: 30 s rolling average, 4th-power mean, 4th root.
     if power is None or len(power) == 0:
         return None
     p = np.nan_to_num(np.asarray(power, dtype=float), nan=0.0)
@@ -206,7 +182,6 @@ def normalized_power(power: np.ndarray, time_array: np.ndarray) -> Optional[floa
 
 
 def total_work_kj(power: np.ndarray, time_array: np.ndarray) -> Optional[float]:
-    """Total mechanical work in kilojoules (integral of power over time)."""
     if power is None or len(power) == 0:
         return None
     p = np.nan_to_num(np.asarray(power, dtype=float), nan=0.0)

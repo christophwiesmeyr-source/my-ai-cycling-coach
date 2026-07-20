@@ -51,7 +51,6 @@ DURATION_FLOORS = [
 
 
 def _min_duration_for_intensity(intensity_frac: float) -> float:
-    """Minimum plausible duration for a block at ``intensity_frac`` x FTP."""
     for upper, min_dur in DURATION_FLOORS:
         if intensity_frac < upper:
             return min_dur
@@ -68,7 +67,7 @@ def _intensity_threshold(power_1hz: np.ndarray, ftp: Optional[float]) -> float:
 
 
 def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
-    """Maximal runs of True as (start, end) index pairs, end exclusive."""
+    # Maximal runs of True as (start, end) index pairs, end exclusive.
     if mask.size == 0:
         return []
     edges = np.diff(mask.astype(np.int8))
@@ -84,7 +83,6 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
 def _merge_close(
     runs: list[tuple[int, int]], grid_s: np.ndarray, max_gap_s: float
 ) -> list[tuple[int, int]]:
-    """Merge runs whose time gap is <= max_gap_s."""
     if not runs:
         return []
     merged = [runs[0]]
@@ -105,19 +103,6 @@ def detect_intervals(
     min_duration_s: float = DEFAULT_MIN_DURATION_S,
     min_separation_s: float = DEFAULT_MIN_SEPARATION_S,
 ) -> List[Interval]:
-    """Detect structured work intervals as sustained elevated-power blocks.
-
-    Args:
-        time_s: timestamps in seconds from activity start.
-        power: power samples aligned with ``time_s``.
-        ftp: optional FTP; sets the intensity threshold to ``0.8 * ftp``. When
-            absent, a self-referential ``1.2 * mean(power > 0)`` is used.
-        min_duration_s: shortest interval to report.
-        min_separation_s: runs closer than this are bridged into one interval.
-
-    Returns:
-        Detected intervals ordered by start time.
-    """
     grid_s, power_1hz = resample_to_1hz(time_s, power)
     if grid_s.size == 0:
         return []

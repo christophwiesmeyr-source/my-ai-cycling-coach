@@ -133,7 +133,7 @@ class Labeler(QtWidgets.QMainWindow):
             )
 
     def _redraw_curve(self) -> None:
-        """Redraw the power trace, smoothed or raw, without touching intervals."""
+        # Redraws the power trace only — leaves interval regions untouched.
         p = (
             moving_average(self._t, self._p)
             if self.smooth_check.isChecked()
@@ -219,7 +219,7 @@ class Labeler(QtWidgets.QMainWindow):
         )
 
     def save(self) -> None:
-        """Explicit save — always marks the activity annotated (even with 0 intervals)."""
+        # An explicit save always marks the activity annotated, even with 0 intervals.
         path = labelio.save_intervals(self.current_id, self.intervals())
         self._dirty = False
         self._loaded_labeled = True

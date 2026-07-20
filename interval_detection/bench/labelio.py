@@ -47,14 +47,12 @@ Interval = Tuple[float, float, str]
 
 
 def list_activity_ids(activities_dir: Path = ACTIVITIES_DIR) -> List[str]:
-    """Activity ids that have an exported CSV, sorted."""
     return sorted(p.stem for p in Path(activities_dir).glob("*.csv"))
 
 
 def load_activity_csv(
     activity_id: str, activities_dir: Path = ACTIVITIES_DIR
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Load (t, power) arrays for an activity from its neutral CSV."""
     path = Path(activities_dir) / f"{activity_id}.csv"
     t, p = [], []
     with open(path, newline="") as f:
@@ -69,7 +67,7 @@ def annotation_path(activity_id: str, labels_dir: Path = LABELS_DIR) -> Path:
 
 
 def _coerce_interval(iv: Sequence) -> Interval:
-    """Accept (start, end) or (start, end, type); clamp type to the vocabulary."""
+    # Accepts (start, end) or (start, end, type).
     start, end = float(iv[0]), float(iv[1])
     itype = iv[2] if len(iv) > 2 else DEFAULT_TYPE
     if itype not in INTERVAL_TYPES:
@@ -78,11 +76,6 @@ def _coerce_interval(iv: Sequence) -> Interval:
 
 
 def load_annotation(activity_id: str, labels_dir: Path = LABELS_DIR) -> dict:
-    """Return ``{'indoor', 'sport_type', 'intervals'}``.
-
-    ``intervals`` is a list of ``(start_s, end_s, type)`` tuples, or ``None`` if
-    the activity has not been annotated yet.
-    """
     path = annotation_path(activity_id, labels_dir)
     if not path.exists():
         return {"indoor": None, "sport_type": None, "intervals": None}
@@ -128,10 +121,6 @@ def _write_annotation(activity_id: str, ann: dict, labels_dir: Path) -> Path:
 def save_intervals(
     activity_id: str, intervals: Iterable[Sequence], labels_dir: Path = LABELS_DIR
 ) -> Path:
-    """Save the interval ground truth, preserving existing activity meta.
-
-    Pass a list (possibly empty) to mark the activity as annotated.
-    """
     ann = load_annotation(activity_id, labels_dir)
     ann["intervals"] = list(intervals)
     return _write_annotation(activity_id, ann, labels_dir)
@@ -143,7 +132,7 @@ def save_meta(
     sport_type: Optional[str],
     labels_dir: Path = LABELS_DIR,
 ) -> Path:
-    """Set activity meta, preserving existing intervals (incl. the unlabelled state)."""
+    # Preserves existing intervals, including the unlabelled (None) state.
     ann = load_annotation(activity_id, labels_dir)
     ann["indoor"] = indoor
     ann["sport_type"] = sport_type

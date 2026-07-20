@@ -59,7 +59,8 @@ def _real_activity(
     elapsed: Optional[float] = None,
     moving_time: Optional[float] = None,
 ) -> Activity:
-    """Build a genuine Activity from constant (or array) streams for tool tests."""
+    # Unlike _make_activity (a Mock), this builds a real Activity — needed for
+    # tests that exercise actual DataFrame-backed behavior, not just call routing.
     cols: dict[str, Any] = {
         "timestamp": pd.to_datetime(0, unit="s")
         + pd.to_timedelta(np.arange(n) * dt, unit="s")

@@ -46,13 +46,11 @@ def _overlap(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def coverage(pred: tuple[float, float], gt: tuple[float, float]) -> float:
-    """Fraction of the GT interval covered by the prediction."""
     length = gt[1] - gt[0]
     return _overlap(pred, gt) / length if length > 0 else 0.0
 
 
 def boundary_error(pred: tuple[float, float], gt: tuple[float, float]) -> float:
-    """Absolute boundary error |Δstart| + |Δend| for a matched pair."""
     return abs(pred[0] - gt[0]) + abs(pred[1] - gt[1])
 
 
@@ -61,12 +59,6 @@ def match(
     gts: list[tuple[float, float]],
     threshold: float = COVERAGE_THRESHOLD,
 ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
-    """Lenient coverage matching.
-
-    Returns ``(tp_pairs, fp, fn)`` where ``tp_pairs`` is a list of
-    ``(pred_idx, gt_idx)``, ``fp`` is a sorted list of prediction indices and
-    ``fn`` a sorted list of GT indices.
-    """
     n, m = len(preds), len(gts)
     covers = [
         {j for j in range(m) if coverage(preds[i], gts[j]) >= threshold}
@@ -109,7 +101,6 @@ def score(
     gts: list[tuple[float, float]],
     threshold: float = COVERAGE_THRESHOLD,
 ) -> dict:
-    """Per-activity counts and boundary errors for matched pairs."""
     tp_pairs, fp, fn = match(preds, gts, threshold)
     return {
         "tp": len(tp_pairs),
@@ -153,12 +144,9 @@ def _bstats(values: Sequence[float]) -> dict:
 def _signed_boundary(
     dstart: Sequence[float], dend: Sequence[float], tol: float = BOUNDARY_TOL_S
 ) -> Optional[dict]:
-    """Signed boundary behaviour over matched pairs (pred - GT).
-
-    Positive = late: a late start clips into the rep; a late end runs into the
-    recovery (diluting the interval's averaged stats). ``length`` is pred minus
-    GT duration (= dend - dstart). ``None`` when there are no matched pairs.
-    """
+    # Positive = late: a late start clips into the rep; a late end runs into the
+    # recovery (diluting the interval's averaged stats). `length` is pred minus
+    # GT duration (= dend - dstart).
     if not dstart:
         return None
 
@@ -205,14 +193,12 @@ def evaluate(
     threshold: float = COVERAGE_THRESHOLD,
     min_gt_duration_s: float = MIN_INTERVAL_S,
 ) -> dict:
-    """Run a detector over the labelled bench and return a stratified report.
-
-    ``predict`` is a callable ``(activity_id, t, power) -> list[(start_s, end_s)]``.
-    The default wraps the package detector with ``ftp``. Only activities whose
-    annotation has been labelled (``intervals`` is a list, not ``None``) are
-    scored; ``[]`` distractors count toward precision only. GT intervals shorter
-    than ``min_gt_duration_s`` are out of the operating envelope and excluded.
-    """
+    # `predict` is a callable (activity_id, t, power) -> list[(start_s, end_s)];
+    # the default wraps the package detector with `ftp`. Only activities whose
+    # annotation has been labelled (`intervals` is a list, not None) are
+    # scored; `[]` distractors count toward precision only. GT intervals
+    # shorter than `min_gt_duration_s` are out of the operating envelope and
+    # excluded.
     if predict is None:
 
         def predict(_aid: str, t: Any, power: Any) -> list:
@@ -305,7 +291,6 @@ def _secs(x: Optional[float]) -> str:
 def _bin_counts(
     values: Sequence[float], step: float, upto: float
 ) -> tuple[list[int], int]:
-    """Counts of values in [0, step), [step, 2*step), ... up to `upto`, + overflow."""
     n_bins = int(round(upto / step))
     counts = [0] * n_bins
     overflow = 0
@@ -320,8 +305,8 @@ def _bin_counts(
 def _fine_histogram(
     values: Sequence[float], step: float = 3.0, upto: float = 42.0, width: int = 40
 ) -> str:
-    """Fine-grained histogram zooming into small boundary errors (the ones that
-    still matter — even a sub-bucket error skews the interval's averaged stats)."""
+    # Zooms into small boundary errors — even a sub-bucket error skews the
+    # interval's averaged stats, so they still matter.
     if not values:
         return "  (no matched intervals)"
     counts, overflow = _bin_counts(values, step, upto)
@@ -424,7 +409,8 @@ def format_report(report: dict) -> str:
 def plot_boundary_histogram(
     values: Sequence[float], path: Optional[Path] = None, bins: int = 20
 ) -> Any:
-    """Optional matplotlib histogram (requires the `bench` extra)."""
+    # matplotlib is an optional dependency (the `bench` extra), so it's
+    # imported lazily here rather than at module level.
     import matplotlib
 
     if path is not None:

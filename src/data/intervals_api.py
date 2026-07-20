@@ -59,12 +59,6 @@ class IntervalsClient:
         return {}
 
     def list_activities(self, after: datetime) -> List[Dict[str, Any]]:
-        """List activities after a given date.
-
-        Returns dicts normalized to a stable shape (id, start_date_local,
-        sport_type, distance, elapsed_time, average_watts, average_heartrate,
-        trainer) that the rest of the app expects.
-        """
         params = {"oldest": after.strftime("%Y-%m-%dT%H:%M:%S")}
         try:
             response = requests.get(
@@ -97,7 +91,6 @@ class IntervalsClient:
         }
 
     def download_activity(self, activity_id: str) -> Activity:
-        """Download a single activity and convert it to an Activity object."""
         metadata = self._get_activity_detail(activity_id)
         streams = self._get_activity_streams(activity_id)
         return self._build_activity(metadata, streams)

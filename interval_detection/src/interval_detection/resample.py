@@ -12,7 +12,7 @@ SAMPLE_HZ = 1.0
 
 
 def _fill_nans(values: np.ndarray) -> np.ndarray:
-    """Linearly interpolate NaNs so they don't poison downstream interpolation."""
+    # Linearly interpolate NaNs so they don't poison downstream interpolation.
     v = np.asarray(values, dtype=float)
     nan = np.isnan(v)
     if not nan.any():
@@ -27,18 +27,8 @@ def _fill_nans(values: np.ndarray) -> np.ndarray:
 def resample_to_1hz(
     time_s: np.ndarray, power: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Resample (time_s, power) onto integer-second grid 0..floor(duration).
-
-    Args:
-        time_s: timestamps in seconds from activity start (monotonic, may be
-            non-uniform or contain pause gaps).
-        power: power samples aligned with ``time_s``.
-
-    Returns:
-        ``(grid_s, power_1hz)`` — the integer-second grid and power interpolated
-        onto it. Note pause gaps are interpolated across; that is acceptable for
-        v0 since structured intervals do not span pauses.
-    """
+    # Pause gaps are interpolated across; that is acceptable for v0 since
+    # structured intervals do not span pauses.
     t = np.asarray(time_s, dtype=float)
     p = _fill_nans(power)
     n = min(len(t), len(p))

@@ -49,7 +49,6 @@ class MainWindow(QMainWindow):
         self._load_recent_activities()
 
     def _init_ui(self) -> None:
-        """Initialize UI components"""
         tab_widget = QTabWidget()
         self.setCentralWidget(tab_widget)
 
@@ -95,7 +94,6 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(analysis_widget, "Analysis")
 
     def _create_activity_sync_controls(self, layout: QBoxLayout) -> None:
-        """Create activity synchronization controls"""
         label = QLabel("Activity Sync")
         label.setStyleSheet(LABEL_STYLE_HEADER)
         layout.addWidget(label)

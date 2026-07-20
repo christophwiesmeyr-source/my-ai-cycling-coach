@@ -14,7 +14,6 @@ DEFAULT_WINDOW_S = 20.0
 def moving_average(
     t: np.ndarray, values: np.ndarray, window_s: float = DEFAULT_WINDOW_S
 ) -> np.ndarray:
-    """Centred, edge-safe moving average of ``values`` over a ``window_s`` window."""
     values = np.asarray(values, dtype=float)
     if len(values) < 2:
         return values

@@ -207,7 +207,6 @@ _HR_ZONES = [
 def execute_tools(
     content: Sequence[ContentBlock], activity_client: IntervalsClient
 ) -> list[dict]:
-    """Execute all tool-use blocks in an assistant response and return tool results."""
     results = []
     for block in content:
         if not hasattr(block, "type") or block.type != "tool_use":
@@ -276,7 +275,6 @@ def _list_activities(activity_client: IntervalsClient, weeks: int) -> str:
 
 
 def _fmt_duration(seconds: float) -> str:
-    """Format a duration as H?h MM m SS s, dropping the hour part when zero."""
     secs = int(round(seconds))
     h, rem = divmod(secs, 3600)
     m, s = divmod(rem, 60)
@@ -284,7 +282,6 @@ def _fmt_duration(seconds: float) -> str:
 
 
 def _load_goals() -> dict:
-    """Load stored training goals (FTP, max HR, weight). Empty dict on failure."""
     try:
         return json.loads(GOALS_PATH.read_text())
     except Exception:
@@ -492,7 +489,6 @@ def _get_activity_training_load(
 def _moving_halves(
     time_array: np.ndarray, mask: np.ndarray | None
 ) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
-    """Boolean masks splitting the moving (or, absent a mask, full) duration in half."""
     w = sample_weights(time_array)
     n = len(w)
     active = (

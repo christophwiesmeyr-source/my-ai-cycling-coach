@@ -6,17 +6,6 @@ import numpy as np
 def apply_moving_average_filter(
     data: np.ndarray, time_array: np.ndarray, window_seconds: float = 20.0
 ) -> np.ndarray:
-    """
-    Apply moving average filter with time-based window
-
-    Args:
-        data: Input data array
-        time_array: Time array in seconds
-        window_seconds: Window size in seconds
-
-    Returns:
-        Filtered data array
-    """
     if len(data) == 0 or len(time_array) == 0:
         return data
 

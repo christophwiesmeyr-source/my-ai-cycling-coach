@@ -11,7 +11,6 @@ ROLLING_WINDOWS = [10, 60, 600, 1200]
 
 
 def rolling_max(data: np.ndarray, window: int) -> float:
-    """Compute the maximum of rolling averages over a window."""
     if len(data) == 0 or window <= 0:
         return 0.0
     data_clean = data[~np.isnan(data)]
@@ -30,17 +29,6 @@ class StatisticsCalculator:
     def calculate_specific_stats(
         activity: Activity, start_idx: int, end_idx: int
     ) -> dict:
-        """
-        Calculate specific statistics for DISTANCE, POWER, HEART RATE, Total Time, and Total Moving Time.
-
-        Args:
-            activity: Activity object
-            start_idx: Start index (inclusive)
-            end_idx: End index (exclusive)
-
-        Returns:
-            Dictionary with keys like 'Distance Total', 'Power Max', etc., each as [value, unit]
-        """
         out: dict[str, list[float | str]] = {}
         time_array = activity.get_time_array()
 

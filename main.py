@@ -14,7 +14,6 @@ _ICON_PATH = Path(__file__).parent / "assets" / "icon.svg"
 
 
 def main() -> None:
-    """Run the application"""
     configure_logging()
     app = QApplication(sys.argv)
     app.setDesktopFileName("my-ai-cycling-coach")

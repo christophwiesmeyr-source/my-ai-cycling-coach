@@ -34,10 +34,6 @@ def export_activity(
     client: IntervalsClient | None = None,
     out_dir: Path = BENCH_ACTIVITIES_DIR,
 ) -> Path:
-    """Download an activity and write its (t, power) series as CSV.
-
-    Returns the path written. Raises ValueError if the activity has no power.
-    """
     client = client or IntervalsClient()
     metadata = client._get_activity_detail(activity_id)
     activity = client.download_activity(activity_id)

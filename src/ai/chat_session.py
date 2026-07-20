@@ -24,7 +24,6 @@ _SYSTEM_BASE = (
 
 
 def _build_session_table() -> str:
-    """Merge sessions CSV with the completion log into a markdown table for the system prompt."""
     csv_path = (
         SESSIONS_ADAPTED_PATH
         if SESSIONS_ADAPTED_PATH.exists()
@@ -89,12 +88,9 @@ class ChatSession:
         self.reload_plans()
 
     def reload_plans(self) -> None:
-        """Re-read plan files from disk (call after generating or adapting a plan).
-
-        Clears the in-memory copy when a file is absent, so a plan deleted on
-        disk (e.g. the adapted plan after regenerating) doesn't linger in the
-        cached system prompt.
-        """
+        # Clears the in-memory copy when a file is absent, so a plan deleted on
+        # disk (e.g. the adapted plan after regenerating) doesn't linger in the
+        # cached system prompt.
         self.original_plan = (
             PLAN_ORIGINAL_PATH.read_text() if PLAN_ORIGINAL_PATH.exists() else ""
         )
@@ -109,14 +105,11 @@ class ChatSession:
         self.history.append({"role": "assistant", "content": text})
 
     def build_system(self) -> list:
-        """System prompt as cache-friendly content blocks.
-
-        The stable prefix (base instructions + plans) carries a prompt-cache
-        breakpoint, so it is re-read at ~0.1x input cost on every tool
-        round-trip and follow-up turn instead of being re-billed in full. The
-        volatile session table (today's date + completion log) is kept *after*
-        the breakpoint, so changing it never invalidates the cached plans.
-        """
+        # The stable prefix (base instructions + plans) carries a prompt-cache
+        # breakpoint, so it is re-read at ~0.1x input cost on every tool
+        # round-trip and follow-up turn instead of being re-billed in full. The
+        # volatile session table (today's date + completion log) is kept *after*
+        # the breakpoint, so changing it never invalidates the cached plans.
         parts = [_SYSTEM_BASE]
         if self.original_plan:
             parts.append(f"\n\n## Original Training Plan\n\n{self.original_plan}")

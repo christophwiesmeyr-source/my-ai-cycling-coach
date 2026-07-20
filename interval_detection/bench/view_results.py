@@ -42,7 +42,6 @@ def result_for_activity(
     activities_dir: Path = labelio.ACTIVITIES_DIR,
     labels_dir: Path = labelio.LABELS_DIR,
 ) -> dict:
-    """Everything needed to plot one activity's detection result (no I/O side effects)."""
     t, p = labelio.load_activity_csv(aid, activities_dir)
     ann = labelio.load_annotation(aid, labels_dir)
     all_gt = ann["intervals"] or []

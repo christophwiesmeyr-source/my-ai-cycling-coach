@@ -1,27 +1,30 @@
 """Training plan generator — plan narrative and structured session list"""
+
 from typing import cast
 
 from anthropic.types import TextBlock
 
 from src.constants import (
-    APP_DIR, PLAN_ORIGINAL_PATH, SESSIONS_ORIGINAL_PATH, AI_MODEL,
-    PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH,
+    APP_DIR,
+    PLAN_ORIGINAL_PATH,
+    SESSIONS_ORIGINAL_PATH,
+    AI_MODEL,
+    PLAN_ADAPTED_PATH,
+    SESSIONS_ADAPTED_PATH,
+    SESSIONS_LOG_PATH,
 )
 from src.goals import GOAL_FIELDS
 from .client import get_client
 
 
 def clear_derived_plan_data() -> None:
-    """Delete data derived from a previous plan: the adapted plan, its session
-    list, and the completion log (keyed by the old plan's dates). Call after a
-    new plan is generated — that data is meaningless against the new plan.
-    """
+    # The adapted plan, its session list, and the completion log are all keyed
+    # to the old plan's dates, so they're meaningless once a new plan replaces it.
     for path in (PLAN_ADAPTED_PATH, SESSIONS_ADAPTED_PATH, SESSIONS_LOG_PATH):
         path.unlink(missing_ok=True)
 
 
 def generate_plan(goals: dict) -> str:
-    """Generate a structured training plan from user goals and save to plan_original.md."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
@@ -43,7 +46,6 @@ def generate_plan(goals: dict) -> str:
 
 
 def generate_sessions(plan_text: str, goals: dict) -> str:
-    """Generate a structured session CSV from the narrative plan and save to sessions_original.csv."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
@@ -54,7 +56,9 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
             "You are a cycling coach assistant that converts training plans into structured "
             "session data. Output only clean CSV — no prose, no markdown fences."
         ),
-        messages=[{"role": "user", "content": _build_sessions_prompt(plan_text, goals)}],
+        messages=[
+            {"role": "user", "content": _build_sessions_prompt(plan_text, goals)}
+        ],
     )
 
     raw = cast(TextBlock, message.content[0]).text.strip()
@@ -67,8 +71,8 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 # Prompt builders                                                      #
 # ------------------------------------------------------------------ #
 
+
 def _build_plan_header(goals: dict) -> str:
-    """Markdown block recording the parameter values used to generate this plan."""
     rows = []
     for gm in GOAL_FIELDS:
         v = goals.get(gm.key)
@@ -97,9 +101,14 @@ def _build_plan_prompt(goals: dict) -> str:
     other_lines = "\n".join(
         f"- {key}: {value}"
         for key, value in goals.items()
-        if value and key not in {
-            "event_name", "event_date", "current_date",
-            "days_until_event", "weeks_until_event",
+        if value
+        and key
+        not in {
+            "event_name",
+            "event_date",
+            "current_date",
+            "days_until_event",
+            "weeks_until_event",
         }
     )
 
@@ -162,7 +171,6 @@ def _build_sessions_prompt(plan_text: str, goals: dict) -> str:
 
 
 def _extract_csv(raw: str) -> str:
-    """Strip any preamble/postamble, returning only lines from the header row onwards."""
     for i, line in enumerate(raw.splitlines()):
         if line.strip().startswith("date,"):
             return "\n".join(raw.splitlines()[i:])

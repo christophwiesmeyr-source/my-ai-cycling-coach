@@ -1,7 +1,7 @@
 """Training tab — AI plan generation, adaptation, and coaching chat"""
+
 import csv
 import json
-import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
@@ -9,16 +9,29 @@ from typing import Any, Callable
 import markdown as md
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QPushButton, QLabel, QLineEdit, QTextEdit,
-    QSpinBox, QComboBox, QFormLayout, QTabWidget,
-    QMessageBox, QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSplitter,
+    QPushButton,
+    QLabel,
+    QLineEdit,
+    QTextEdit,
+    QSpinBox,
+    QComboBox,
+    QFormLayout,
+    QTabWidget,
+    QMessageBox,
+    QDateEdit,
+    QTableWidget,
+    QTableWidgetItem,
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QColor, QBrush
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
 from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
+from src.data.intervals_api import IntervalsClient
 from src.goals import GOAL_FIELDS
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
 
@@ -30,6 +43,7 @@ LABEL_STYLE_SUBHEADER = "font-weight: bold;"
 @dataclass
 class _GoalField:
     """Descriptor binding a training-goals form field to its JSON key."""
+
     key: str
     signal: Any
     read: Callable[[], Any]
@@ -37,12 +51,15 @@ class _GoalField:
 
 
 class TrainingTab(QWidget):
-    def __init__(self, activity_client):
+    def __init__(self, activity_client: IntervalsClient):
         super().__init__()
         self.activity_client = activity_client
         self.chat_session = ChatSession()
-        self._active_worker = None
+        self._active_worker: (
+            PlanGeneratorWorker | PlanAdaptorWorker | ChatWorker | None
+        ) = None
         self._loading_sessions = False
+        self._stream_text_start: int | None = None
         self._init_ui()
         self._load_existing_plans()
         self._load_sessions_table()
@@ -53,7 +70,7 @@ class TrainingTab(QWidget):
     # UI construction                                                      #
     # ------------------------------------------------------------------ #
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         root = QHBoxLayout(self)
 
         root.addWidget(self._build_left_panel(), 0)
@@ -85,55 +102,65 @@ class TrainingTab(QWidget):
         self.spin_age.setValue(0)
         self.spin_age.setSuffix(" yrs  (0 = unknown)")
         form.addRow("Age:", self.spin_age)
-        self._goal_fields.append(_GoalField(
-            key="age_years",
-            signal=self.spin_age.valueChanged,
-            read=lambda: self.spin_age.value() or None,
-            write=lambda v: self.spin_age.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="age_years",
+                signal=self.spin_age.valueChanged,
+                read=lambda: self.spin_age.value() or None,
+                write=lambda v: self.spin_age.setValue(int(v)) if v else None,
+            )
+        )
 
         self.spin_weight = QSpinBox()
         self.spin_weight.setRange(0, 200)
         self.spin_weight.setValue(0)
         self.spin_weight.setSuffix(" kg  (0 = unknown)")
         form.addRow("Weight:", self.spin_weight)
-        self._goal_fields.append(_GoalField(
-            key="weight_kg",
-            signal=self.spin_weight.valueChanged,
-            read=lambda: self.spin_weight.value() or None,
-            write=lambda v: self.spin_weight.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="weight_kg",
+                signal=self.spin_weight.valueChanged,
+                read=lambda: self.spin_weight.value() or None,
+                write=lambda v: self.spin_weight.setValue(int(v)) if v else None,
+            )
+        )
 
         self.combo_gender = QComboBox()
         self.combo_gender.addItems(["Prefer not to say", "Male", "Female", "Other"])
         form.addRow("Gender:", self.combo_gender)
-        self._goal_fields.append(_GoalField(
-            key="gender",
-            signal=self.combo_gender.currentTextChanged,
-            read=lambda: self.combo_gender.currentText(),
-            write=lambda v: self.combo_gender.setCurrentText(v) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="gender",
+                signal=self.combo_gender.currentTextChanged,
+                read=lambda: self.combo_gender.currentText(),
+                write=lambda v: self.combo_gender.setCurrentText(v) if v else None,
+            )
+        )
 
         self.input_goal = QTextEdit()
         self.input_goal.setPlaceholderText("e.g. Complete a gran fondo, Improve FTP")
         self.input_goal.setFixedHeight(70)
         form.addRow("Main goal:", self.input_goal)
-        self._goal_fields.append(_GoalField(
-            key="main_goal",
-            signal=self.input_goal.textChanged,
-            read=lambda: self.input_goal.toPlainText().strip(),
-            write=lambda v: self.input_goal.setPlainText(v or ""),
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="main_goal",
+                signal=self.input_goal.textChanged,
+                read=lambda: self.input_goal.toPlainText().strip(),
+                write=lambda v: self.input_goal.setPlainText(v or ""),
+            )
+        )
 
         self.input_event_name = QLineEdit()
         self.input_event_name.setPlaceholderText("e.g. Ötztaler Radmarathon (optional)")
         form.addRow("Event name:", self.input_event_name)
-        self._goal_fields.append(_GoalField(
-            key="event_name",
-            signal=self.input_event_name.textChanged,
-            read=lambda: self.input_event_name.text().strip(),
-            write=lambda v: self.input_event_name.setText(v or ""),
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="event_name",
+                signal=self.input_event_name.textChanged,
+                read=lambda: self.input_event_name.text().strip(),
+                write=lambda v: self.input_event_name.setText(v or ""),
+            )
+        )
 
         # event_date is special: its read contributes computed fields and its
         # write requires date validation, so it is handled explicitly in
@@ -144,71 +171,83 @@ class TrainingTab(QWidget):
         self.input_event_date.setMinimumDate(QDate.currentDate().addDays(1))
         self.input_event_date.setDate(QDate.currentDate().addMonths(4))
         form.addRow("Event date:", self.input_event_date)
-        self._goal_fields.append(_GoalField(
-            key="_event_date",
-            signal=self.input_event_date.dateChanged,
-            read=lambda: None,
-            write=lambda v: None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="_event_date",
+                signal=self.input_event_date.dateChanged,
+                read=lambda: None,
+                write=lambda v: None,
+            )
+        )
 
         self.spin_hours = QSpinBox()
         self.spin_hours.setRange(1, 30)
         self.spin_hours.setValue(8)
         self.spin_hours.setSuffix(" h/week")
         form.addRow("Available time:", self.spin_hours)
-        self._goal_fields.append(_GoalField(
-            key="available_hours_per_week",
-            signal=self.spin_hours.valueChanged,
-            read=lambda: self.spin_hours.value(),
-            write=lambda v: self.spin_hours.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="available_hours_per_week",
+                signal=self.spin_hours.valueChanged,
+                read=lambda: self.spin_hours.value(),
+                write=lambda v: self.spin_hours.setValue(int(v)) if v else None,
+            )
+        )
 
         self.spin_sessions = QSpinBox()
         self.spin_sessions.setRange(1, 14)
         self.spin_sessions.setValue(5)
         self.spin_sessions.setSuffix(" sessions/week")
         form.addRow("Sessions per week:", self.spin_sessions)
-        self._goal_fields.append(_GoalField(
-            key="sessions_per_week",
-            signal=self.spin_sessions.valueChanged,
-            read=lambda: self.spin_sessions.value(),
-            write=lambda v: self.spin_sessions.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="sessions_per_week",
+                signal=self.spin_sessions.valueChanged,
+                read=lambda: self.spin_sessions.value(),
+                write=lambda v: self.spin_sessions.setValue(int(v)) if v else None,
+            )
+        )
 
         self.spin_ftp = QSpinBox()
         self.spin_ftp.setRange(0, 600)
         self.spin_ftp.setValue(0)
         self.spin_ftp.setSuffix(" W  (0 = unknown)")
         form.addRow("Current FTP:", self.spin_ftp)
-        self._goal_fields.append(_GoalField(
-            key="current_ftp_watts",
-            signal=self.spin_ftp.valueChanged,
-            read=lambda: self.spin_ftp.value() or None,
-            write=lambda v: self.spin_ftp.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="current_ftp_watts",
+                signal=self.spin_ftp.valueChanged,
+                read=lambda: self.spin_ftp.value() or None,
+                write=lambda v: self.spin_ftp.setValue(int(v)) if v else None,
+            )
+        )
 
         self.spin_max_hr = QSpinBox()
         self.spin_max_hr.setRange(0, 250)
         self.spin_max_hr.setValue(0)
         self.spin_max_hr.setSuffix(" bpm  (0 = unknown)")
         form.addRow("Max heart rate:", self.spin_max_hr)
-        self._goal_fields.append(_GoalField(
-            key="max_hr_bpm",
-            signal=self.spin_max_hr.valueChanged,
-            read=lambda: self.spin_max_hr.value() or None,
-            write=lambda v: self.spin_max_hr.setValue(int(v)) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="max_hr_bpm",
+                signal=self.spin_max_hr.valueChanged,
+                read=lambda: self.spin_max_hr.value() or None,
+                write=lambda v: self.spin_max_hr.setValue(int(v)) if v else None,
+            )
+        )
 
         self.combo_level = QComboBox()
         self.combo_level.addItems(["Beginner", "Intermediate", "Advanced"])
         self.combo_level.setCurrentText("Intermediate")
         form.addRow("Experience:", self.combo_level)
-        self._goal_fields.append(_GoalField(
-            key="experience_level",
-            signal=self.combo_level.currentTextChanged,
-            read=lambda: self.combo_level.currentText(),
-            write=lambda v: self.combo_level.setCurrentText(v) if v else None,
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="experience_level",
+                signal=self.combo_level.currentTextChanged,
+                read=lambda: self.combo_level.currentText(),
+                write=lambda v: self.combo_level.setCurrentText(v) if v else None,
+            )
+        )
 
         self.input_notes = QTextEdit()
         self.input_notes.setPlaceholderText(
@@ -216,12 +255,14 @@ class TrainingTab(QWidget):
         )
         self.input_notes.setFixedHeight(70)
         form.addRow("Notes:", self.input_notes)
-        self._goal_fields.append(_GoalField(
-            key="additional_notes",
-            signal=self.input_notes.textChanged,
-            read=lambda: self.input_notes.toPlainText().strip(),
-            write=lambda v: self.input_notes.setPlainText(v or ""),
-        ))
+        self._goal_fields.append(
+            _GoalField(
+                key="additional_notes",
+                signal=self.input_notes.textChanged,
+                read=lambda: self.input_notes.toPlainText().strip(),
+                write=lambda v: self.input_notes.setPlainText(v or ""),
+            )
+        )
 
         _registered = {f.key for f in self._goal_fields if not f.key.startswith("_")}
         _expected = {gm.key for gm in GOAL_FIELDS}
@@ -279,19 +320,26 @@ class TrainingTab(QWidget):
         sessions_splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.sessions_table = QTableWidget()
-        self.sessions_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.SelectedClicked)
+        self.sessions_table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.SelectedClicked
+        )
         self.sessions_table.setSortingEnabled(True)
         self.sessions_table.setAlternatingRowColors(True)
-        self.sessions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.sessions_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
         self.sessions_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        if (vh := self.sessions_table.verticalHeader()):
+        if vh := self.sessions_table.verticalHeader():
             vh.setVisible(False)
         self.sessions_table.itemSelectionChanged.connect(self._on_session_selected)
         sessions_splitter.addWidget(self.sessions_table)
 
         self.session_detail = QTextEdit()
         self.session_detail.setReadOnly(True)
-        self.session_detail.setPlaceholderText("Select a session to see the full protocol.")
+        self.session_detail.setPlaceholderText(
+            "Select a session to see the full protocol."
+        )
         self.session_detail.setMaximumHeight(140)
         sessions_splitter.addWidget(self.session_detail)
         sessions_splitter.setStretchFactor(0, 4)
@@ -335,10 +383,12 @@ class TrainingTab(QWidget):
     # Plan generation                                                      #
     # ------------------------------------------------------------------ #
 
-    def _on_generate(self):
+    def _on_generate(self) -> None:
         goals = self._collect_goals()
         if not goals.get("main_goal"):
-            QMessageBox.warning(self, "Missing Goal", "Please enter a main training goal.")
+            QMessageBox.warning(
+                self, "Missing Goal", "Please enter a main training goal."
+            )
             return
 
         if PLAN_ORIGINAL_PATH.exists():
@@ -365,7 +415,7 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_plan_generated(self, plan: str):
+    def _on_plan_generated(self, plan: str) -> None:
         self.original_plan_view.setHtml(self._render_markdown(plan))
         self.adapted_plan_view.clear()  # adapted plan was just invalidated/deleted
         self._load_sessions_table()
@@ -377,14 +427,17 @@ class TrainingTab(QWidget):
     # Plan adaptation                                                      #
     # ------------------------------------------------------------------ #
 
-    def _on_adapt(self):
+    def _on_adapt(self) -> None:
         if not PLAN_ORIGINAL_PATH.exists():
             QMessageBox.warning(
                 self, "No Plan", "Generate a training plan first before adapting it."
             )
             return
 
-        self._set_busy(True, "Querying recent activities and adapting plan — this may take a minute…")
+        self._set_busy(
+            True,
+            "Querying recent activities and adapting plan — this may take a minute…",
+        )
         worker = PlanAdaptorWorker(self.activity_client)
         worker.finished.connect(self._on_plan_adapted)
         worker.error_occurred.connect(self._on_error)
@@ -393,17 +446,19 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_plan_adapted(self, plan: str):
+    def _on_plan_adapted(self, plan: str) -> None:
         self.adapted_plan_view.setHtml(self._render_markdown(plan))
         self.plan_tabs.setCurrentIndex(1)
         self.chat_session.reload_plans()
-        self._append_chat_system("Adapted plan ready. Ask your coach about the changes.")
+        self._append_chat_system(
+            "Adapted plan ready. Ask your coach about the changes."
+        )
 
     # ------------------------------------------------------------------ #
     # Chat                                                                 #
     # ------------------------------------------------------------------ #
 
-    def _on_send(self):
+    def _on_send(self) -> None:
         text = self.chat_input.text().strip()
         if not text:
             return
@@ -425,10 +480,10 @@ class TrainingTab(QWidget):
         self._active_worker = worker
         worker.start()
 
-    def _on_chat_tool_status(self, message: str):
+    def _on_chat_tool_status(self, message: str) -> None:
         self.chat_display.append(f"<i>({message})</i>")
 
-    def _on_chat_chunk(self, chunk: str):
+    def _on_chat_chunk(self, chunk: str) -> None:
         cursor = self.chat_display.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         if self._stream_text_start is None:
@@ -437,19 +492,21 @@ class TrainingTab(QWidget):
         self.chat_display.setTextCursor(cursor)
         self.chat_display.ensureCursorVisible()
 
-    def _on_chat_finished(self, full_response: str):
+    def _on_chat_finished(self, full_response: str) -> None:
         self.chat_session.add_assistant_message(full_response)
         if self._stream_text_start is not None:
             cursor = self.chat_display.textCursor()
             cursor.setPosition(self._stream_text_start)
             cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
             cursor.removeSelectedText()
-            cursor.insertHtml(md.markdown(full_response, extensions=["tables", "fenced_code"]))
+            cursor.insertHtml(
+                md.markdown(full_response, extensions=["tables", "fenced_code"])
+            )
             self._stream_text_start = None
         self.chat_display.append("")
         self._set_chat_input_enabled(True)
 
-    def _on_chat_error(self, error: str):
+    def _on_chat_error(self, error: str) -> None:
         self._append_chat_system(f"Error: {error}")
         self._set_chat_input_enabled(True)
 
@@ -473,12 +530,10 @@ class TrainingTab(QWidget):
                 goals[f.key] = f.read()
         return goals
 
-    def _load_sessions_table(self):
+    def _load_sessions_table(self) -> None:
         if not SESSIONS_ORIGINAL_PATH.exists():
             return
 
-        ftp = self.spin_ftp.value()
-        show_watts = ftp > 0
         log = self._load_sessions_log()
 
         with open(SESSIONS_ORIGINAL_PATH, newline="", encoding="utf-8") as f:
@@ -487,7 +542,15 @@ class TrainingTab(QWidget):
         if not rows:
             return
 
-        headers = ["Date", "Week", "Phase", "Type", "Duration", "Intensity", "Target %FTP"]
+        headers = [
+            "Date",
+            "Week",
+            "Phase",
+            "Type",
+            "Duration",
+            "Intensity",
+            "Target %FTP",
+        ]
         headers += ["Completed", "Comment"]
         completed_col = len(headers) - 2
         comment_col = len(headers) - 1
@@ -502,9 +565,9 @@ class TrainingTab(QWidget):
         editable = read_only | Qt.ItemFlag.ItemIsEditable
         today_str = date.today().isoformat()
 
-        color_done    = QColor(200, 235, 200)   # soft green
-        color_missed  = QColor(235, 200, 200)   # soft red
-        color_today   = QColor(200, 220, 245)   # soft blue
+        color_done = QColor(200, 235, 200)  # soft green
+        color_missed = QColor(235, 200, 200)  # soft red
+        color_today = QColor(200, 220, 245)  # soft blue
 
         for row_idx, row in enumerate(rows):
             pct = row.get("target_power_pct_ftp", "")
@@ -546,7 +609,7 @@ class TrainingTab(QWidget):
             header.setStretchLastSection(True)
         self._loading_sessions = False
 
-    def _on_session_selected(self):
+    def _on_session_selected(self) -> None:
         row_idx = self.sessions_table.currentRow()
         if row_idx < 0:
             self.session_detail.clear()
@@ -575,11 +638,15 @@ class TrainingTab(QWidget):
 
         self.session_detail.setHtml("<br>".join(parts))
 
-    def _load_existing_plans(self):
+    def _load_existing_plans(self) -> None:
         if PLAN_ORIGINAL_PATH.exists():
-            self.original_plan_view.setHtml(self._render_markdown(PLAN_ORIGINAL_PATH.read_text()))
+            self.original_plan_view.setHtml(
+                self._render_markdown(PLAN_ORIGINAL_PATH.read_text())
+            )
         if PLAN_ADAPTED_PATH.exists():
-            self.adapted_plan_view.setHtml(self._render_markdown(PLAN_ADAPTED_PATH.read_text()))
+            self.adapted_plan_view.setHtml(
+                self._render_markdown(PLAN_ADAPTED_PATH.read_text())
+            )
 
     def _render_markdown(self, text: str) -> str:
         body = md.markdown(text, extensions=["tables", "fenced_code"])
@@ -598,11 +665,11 @@ class TrainingTab(QWidget):
             li {{ margin: 2px 0; }}
         </style></head><body>{body}</body></html>"""
 
-    def _refresh_row_colors(self, log: dict):
+    def _refresh_row_colors(self, log: dict) -> None:
         today_str = date.today().isoformat()
-        color_done   = QColor(200, 235, 200)
+        color_done = QColor(200, 235, 200)
         color_missed = QColor(235, 200, 200)
-        color_today  = QColor(200, 220, 245)
+        color_today = QColor(200, 220, 245)
 
         self._loading_sessions = True
         for row_idx in range(self.sessions_table.rowCount()):
@@ -625,7 +692,7 @@ class TrainingTab(QWidget):
                     item.setBackground(QBrush(row_color) if row_color else QBrush())
         self._loading_sessions = False
 
-    def _prefill_completed_date(self, row: int, col: int):
+    def _prefill_completed_date(self, row: int, col: int) -> None:
         completed_col = self.sessions_table.columnCount() - 2
         if col != completed_col:
             return
@@ -643,7 +710,7 @@ class TrainingTab(QWidget):
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _save_sessions_log(self):
+    def _save_sessions_log(self) -> None:
         if self._loading_sessions:
             return
         log = {}
@@ -665,20 +732,20 @@ class TrainingTab(QWidget):
         SESSIONS_LOG_PATH.write_text(json.dumps(log, indent=2))
         self._refresh_row_colors(log)
 
-    def _connect_autosave(self):
+    def _connect_autosave(self) -> None:
         for f in self._goal_fields:
             f.signal.connect(self._autosave_goals)
         self.sessions_table.itemChanged.connect(self._save_sessions_log)
         self.sessions_table.cellDoubleClicked.connect(self._prefill_completed_date)
 
-    def _autosave_goals(self):
+    def _autosave_goals(self) -> None:
         self._save_goals(self._collect_goals())
 
-    def _save_goals(self, goals: dict):
+    def _save_goals(self, goals: dict) -> None:
         GOALS_PATH.parent.mkdir(parents=True, exist_ok=True)
         GOALS_PATH.write_text(json.dumps(goals, indent=2))
 
-    def _load_goals(self):
+    def _load_goals(self) -> None:
         if not GOALS_PATH.exists():
             return
         try:
@@ -693,24 +760,24 @@ class TrainingTab(QWidget):
             if not f.key.startswith("_"):
                 f.write(goals.get(f.key))
 
-    def _set_busy(self, busy: bool, message: str):
+    def _set_busy(self, busy: bool, message: str) -> None:
         self.btn_generate.setEnabled(not busy)
         self.btn_adapt.setEnabled(not busy)
         self.status_label.setText(message)
 
-    def _set_chat_input_enabled(self, enabled: bool):
+    def _set_chat_input_enabled(self, enabled: bool) -> None:
         self.chat_input.setEnabled(enabled)
         self.btn_send.setEnabled(enabled)
 
-    def _append_chat_user(self, text: str):
+    def _append_chat_user(self, text: str) -> None:
         self.chat_display.append(f"<b>You:</b> {text}\n")
 
-    def _append_chat_assistant_start(self):
+    def _append_chat_assistant_start(self) -> None:
         self.chat_display.append("<b>Coach:</b> ")
         self._stream_text_start = None  # set lazily on first chunk
 
-    def _append_chat_system(self, text: str):
+    def _append_chat_system(self, text: str) -> None:
         self.chat_display.append(f"<i>{text}</i>\n")
 
-    def _on_error(self, error: str):
+    def _on_error(self, error: str) -> None:
         QMessageBox.critical(self, "Error", error)

@@ -1,6 +1,8 @@
 """Tests for the evaluation harness (pinned cases + integration)."""
+
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 import pytest
 
@@ -16,40 +18,50 @@ import evaluate  # noqa: E402
 
 # (label, preds, gts, tp, fp, fn, sorted boundary errors of TPs)
 CASES = [
-    ("exact hit",        [(0, 600)],            [(0, 600)],            1, 0, 0, [0]),
-    ("hit w/ slop",      [(150, 720)],          [(100, 700)],          1, 0, 0, [70]),
-    ("near-miss 0.47",   [(320, 600)],          [(0, 600)],            0, 1, 1, []),
-    ("exactly 0.5",      [(300, 600)],          [(0, 600)],            1, 0, 0, [300]),
-    ("even split",       [(0, 290), (310, 600)],[(0, 600)],            0, 2, 1, []),
-    ("lopsided split",   [(0, 400), (420, 600)],[(0, 600)],            1, 1, 0, [200]),
-    ("full merge",       [(0, 1300)],           [(0, 600), (700, 1300)],0, 1, 2, []),
-    ("partial merge",    [(0, 800)],            [(0, 600), (650, 1050)],1, 0, 1, [200]),
-    ("over-extend empty",[(100, 1300)],         [(100, 700)],          1, 0, 0, [600]),
-    ("distractor none",  [],                    [],                    0, 0, 0, []),
-    ("distractor FP",    [(100, 300)],          [],                    0, 1, 0, []),
-    ("mixed",            [(0, 600), (1000, 1200), (2000, 2200)],
-                                                [(0, 600), (1000, 1600)],1, 2, 1, [0]),
+    ("exact hit", [(0, 600)], [(0, 600)], 1, 0, 0, [0]),
+    ("hit w/ slop", [(150, 720)], [(100, 700)], 1, 0, 0, [70]),
+    ("near-miss 0.47", [(320, 600)], [(0, 600)], 0, 1, 1, []),
+    ("exactly 0.5", [(300, 600)], [(0, 600)], 1, 0, 0, [300]),
+    ("even split", [(0, 290), (310, 600)], [(0, 600)], 0, 2, 1, []),
+    ("lopsided split", [(0, 400), (420, 600)], [(0, 600)], 1, 1, 0, [200]),
+    ("full merge", [(0, 1300)], [(0, 600), (700, 1300)], 0, 1, 2, []),
+    ("partial merge", [(0, 800)], [(0, 600), (650, 1050)], 1, 0, 1, [200]),
+    ("over-extend empty", [(100, 1300)], [(100, 700)], 1, 0, 0, [600]),
+    ("distractor none", [], [], 0, 0, 0, []),
+    ("distractor FP", [(100, 300)], [], 0, 1, 0, []),
+    (
+        "mixed",
+        [(0, 600), (1000, 1200), (2000, 2200)],
+        [(0, 600), (1000, 1600)],
+        1,
+        2,
+        1,
+        [0],
+    ),
 ]
 
 
-@pytest.mark.parametrize("label,preds,gts,tp,fp,fn,berr",
-                         CASES, ids=[c[0] for c in CASES])
-def test_pinned_cases(label, preds, gts, tp, fp, fn, berr):
+@pytest.mark.parametrize(
+    "label,preds,gts,tp,fp,fn,berr", CASES, ids=[c[0] for c in CASES]
+)
+def test_pinned_cases(
+    label: str, preds: list, gts: list, tp: int, fp: int, fn: int, berr: list
+) -> None:
     result = evaluate.score(preds, gts)
     assert (result["tp"], result["fp"], result["fn"]) == (tp, fp, fn)
     assert sorted(result["boundary_errors"]) == berr
 
 
-def test_coverage_and_boundary_helpers():
+def test_coverage_and_boundary_helpers() -> None:
     assert evaluate.coverage((0, 300), (0, 600)) == 0.5
     assert evaluate.coverage((0, 600), (0, 600)) == 1.0
     assert evaluate.coverage((700, 800), (0, 600)) == 0.0
     assert evaluate.boundary_error((150, 720), (100, 700)) == 70
 
 
-def test_prf_edge_cases():
-    assert evaluate._prf(0, 0, 0) == (None, None, None)   # nothing happened
-    assert evaluate._prf(0, 0, 2)[1] == 0.0               # recall 0 with FN
+def test_prf_edge_cases() -> None:
+    assert evaluate._prf(0, 0, 0) == (None, None, None)  # nothing happened
+    assert evaluate._prf(0, 0, 2)[1] == 0.0  # recall 0 with FN
     p, r, f = evaluate._prf(3, 1, 1)
     assert p == 0.75 and r == 0.75 and f == 0.75
 
@@ -58,13 +70,14 @@ def test_prf_edge_cases():
 # Integration on a synthetic temp bench
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture
-def bench(tmp_path):
+def bench(tmp_path: Path) -> tuple[Path, Path]:
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"
     acts.mkdir()
 
-    def write_activity(aid, n):
+    def write_activity(aid: str, n: int) -> None:
         (acts / f"{aid}.csv").write_text(
             "t,power\n" + "\n".join(f"{i},200" for i in range(n)) + "\n"
         )
@@ -72,7 +85,9 @@ def bench(tmp_path):
     # A: indoor, two vo2max reps
     write_activity("A", 1600)
     labelio.save_meta("A", indoor=True, sport_type="Ride", labels_dir=labs)
-    labelio.save_intervals("A", [(100, 700, "vo2max"), (800, 1400, "vo2max")], labels_dir=labs)
+    labelio.save_intervals(
+        "A", [(100, 700, "vo2max"), (800, 1400, "vo2max")], labels_dir=labs
+    )
     # D: outdoor distractor, labelled with no intervals
     write_activity("D", 1100)
     labelio.save_meta("D", indoor=False, sport_type="Ride", labels_dir=labs)
@@ -84,15 +99,18 @@ def bench(tmp_path):
     return acts, labs
 
 
-def _gt_predict(labs):
-    def predict(aid, t, power):
+def _gt_predict(labs: Path) -> Callable:
+    def predict(aid: str, t: Any, power: Any) -> list:
         return labelio.load_annotation(aid, labels_dir=labs)["intervals"] or []
+
     return predict
 
 
-def test_oracle_scores_perfect(bench):
+def test_oracle_scores_perfect(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
-    rep = evaluate.evaluate(predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs)
+    rep = evaluate.evaluate(
+        predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs
+    )
     assert rep["n_activities"] == 2  # U skipped
     o = rep["overall"]
     assert o["precision"] == 1.0 and o["recall"] == 1.0 and o["f1"] == 1.0
@@ -100,30 +118,36 @@ def test_oracle_scores_perfect(bench):
     assert rep["by_type"]["vo2max"]["recall"] == 1.0
 
 
-def test_jittered_oracle_boundary_error(bench):
+def test_jittered_oracle_boundary_error(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
 
-    def predict(aid, t, power):
-        return [(s + 10, e + 10) for s, e, _ in
-                (labelio.load_annotation(aid, labels_dir=labs)["intervals"] or [])]
+    def predict(aid: str, t: Any, power: Any) -> list:
+        return [
+            (s + 10, e + 10)
+            for s, e, _ in (
+                labelio.load_annotation(aid, labels_dir=labs)["intervals"] or []
+            )
+        ]
 
     rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
     assert rep["overall"]["recall"] == 1.0 and rep["overall"]["precision"] == 1.0
     assert rep["overall"]["boundary"]["mean"] == 20.0  # |10| + |10|
 
 
-def test_empty_detector_is_zero_recall(bench):
+def test_empty_detector_is_zero_recall(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
-    rep = evaluate.evaluate(activities_dir=acts, labels_dir=labs)  # default detect_intervals -> []
+    rep = evaluate.evaluate(
+        activities_dir=acts, labels_dir=labs
+    )  # default detect_intervals -> []
     assert rep["overall"]["recall"] == 0.0
     assert rep["overall"]["precision"] is None  # no predictions at all
     assert rep["overall"]["fn"] == 2
 
 
-def test_merge_rule_blocks_whole_ride_gaming(bench):
+def test_merge_rule_blocks_whole_ride_gaming(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
 
-    def predict(aid, t, power):
+    def predict(aid: str, t: Any, power: Any) -> list:
         return [(0, 1500)] if aid == "A" else []
 
     rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
@@ -133,51 +157,60 @@ def test_merge_rule_blocks_whole_ride_gaming(bench):
     assert rep["overall"]["fn"] == 2 and rep["overall"]["fp"] == 1
 
 
-def test_signed_boundary_directions():
+def test_signed_boundary_directions() -> None:
     # pair 1: starts 5 s late, ends 3 s early -> shorter
     # pair 2: starts 1 s early, ends 1 s late  -> within tol on both, length same
     bd = evaluate._signed_boundary([5.0, -1.0], [-3.0, 1.0])
+    assert bd is not None
     assert bd["n"] == 2
     assert bd["start"]["late"] == 1 and bd["start"]["on"] == 1
     assert bd["end"]["early"] == 1 and bd["end"]["on"] == 1
     assert bd["length"]["shorter"] == 1 and bd["length"]["same"] == 1
 
 
-def test_signed_boundary_none_without_matches():
+def test_signed_boundary_none_without_matches() -> None:
     assert evaluate._signed_boundary([], []) is None
 
 
-def test_fine_histogram_bins_and_overflow():
+def test_fine_histogram_bins_and_overflow() -> None:
     counts, overflow = evaluate._bin_counts([0, 2, 4, 41, 100], step=3.0, upto=42.0)
-    assert counts[0] == 2   # 0 and 2 -> first 3 s bin
-    assert counts[1] == 1   # 4 -> second bin
+    assert counts[0] == 2  # 0 and 2 -> first 3 s bin
+    assert counts[1] == 1  # 4 -> second bin
     assert counts[13] == 1  # 41 -> last in-range bin
-    assert overflow == 1    # 100 -> overflow
+    assert overflow == 1  # 100 -> overflow
 
 
-def test_short_gt_excluded_from_scope(tmp_path):
+def test_short_gt_excluded_from_scope(tmp_path: Path) -> None:
     acts = tmp_path / "activities"
     labs = tmp_path / "labels"
     acts.mkdir()
-    (acts / "S.csv").write_text("t,power\n" + "\n".join(f"{i},200" for i in range(700)) + "\n")
+    (acts / "S.csv").write_text(
+        "t,power\n" + "\n".join(f"{i},200" for i in range(700)) + "\n"
+    )
     labelio.save_meta("S", indoor=True, sport_type="Ride", labels_dir=labs)
     # a 30 s anaerobic rep (out of envelope) + a 300 s vo2max rep (in scope)
-    labelio.save_intervals("S", [(100, 130, "anaerobic"), (200, 500, "vo2max")], labels_dir=labs)
+    labelio.save_intervals(
+        "S", [(100, 130, "anaerobic"), (200, 500, "vo2max")], labels_dir=labs
+    )
 
     # a detector that only finds the in-scope rep
-    def predict(aid, t, power):
+    def predict(aid: str, t: Any, power: Any) -> list:
         return [(200, 500)]
 
     rep = evaluate.evaluate(predict=predict, activities_dir=acts, labels_dir=labs)
     assert rep["excluded_short_gt"] == 1
-    assert rep["overall"]["tp"] == 1 and rep["overall"]["fn"] == 0  # short one is not an FN
-    assert "anaerobic" not in rep["by_type"]                        # excluded from stratification
+    assert (
+        rep["overall"]["tp"] == 1 and rep["overall"]["fn"] == 0
+    )  # short one is not an FN
+    assert "anaerobic" not in rep["by_type"]  # excluded from stratification
     assert rep["by_type"]["vo2max"]["recall"] == 1.0
 
 
-def test_stratification_structure(bench):
+def test_stratification_structure(bench: tuple[Path, Path]) -> None:
     acts, labs = bench
-    rep = evaluate.evaluate(predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs)
+    rep = evaluate.evaluate(
+        predict=_gt_predict(labs), activities_dir=acts, labels_dir=labs
+    )
     assert set(rep["by_place"]) == {"indoor", "outdoor"}
     assert rep["by_place"]["indoor"]["tp"] == 2
     assert rep["by_type"]["vo2max"]["n"] == 2

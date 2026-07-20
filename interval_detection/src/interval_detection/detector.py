@@ -18,6 +18,7 @@ Variability of power *within* an interval turned out not to separate real
 intervals from steady climbs (both are low-variability), so it is intentionally
 not used; the power-duration rule is the discriminator instead.
 """
+
 from typing import List, Optional
 
 import numpy as np
@@ -42,15 +43,14 @@ NO_FTP_MULTIPLIER = 1.2
 # Each entry is (intensity strictly below this fraction of FTP, min seconds).
 # Only used when FTP is known.
 DURATION_FLOORS = [
-    (0.90, 420.0),         # < 90% FTP : tempo / low sweet spot (nom. 8 min)
-    (1.00, 255.0),         # 90-100%   : sweet spot / sub-thresh (nom. 5 min)
-    (1.12, 150.0),         # 100-112%  : threshold / low VO2     (nom. 3 min)
+    (0.90, 420.0),  # < 90% FTP : tempo / low sweet spot (nom. 8 min)
+    (1.00, 255.0),  # 90-100%   : sweet spot / sub-thresh (nom. 5 min)
+    (1.12, 150.0),  # 100-112%  : threshold / low VO2     (nom. 3 min)
     (float("inf"), 75.0),  # > 112%    : VO2 / anaerobic         (nom. 1.5 min)
 ]
 
 
 def _min_duration_for_intensity(intensity_frac: float) -> float:
-    """Minimum plausible duration for a block at ``intensity_frac`` x FTP."""
     for upper, min_dur in DURATION_FLOORS:
         if intensity_frac < upper:
             return min_dur
@@ -66,13 +66,13 @@ def _intensity_threshold(power_1hz: np.ndarray, ftp: Optional[float]) -> float:
     return NO_FTP_MULTIPLIER * float(active.mean())
 
 
-def _runs(mask: np.ndarray):
-    """Maximal runs of True as (start, end) index pairs, end exclusive."""
+def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    # Maximal runs of True as (start, end) index pairs, end exclusive.
     if mask.size == 0:
         return []
     edges = np.diff(mask.astype(np.int8))
-    starts = list(np.flatnonzero(edges == 1) + 1)
-    ends = list(np.flatnonzero(edges == -1) + 1)
+    starts: list[int] = (np.flatnonzero(edges == 1) + 1).tolist()
+    ends: list[int] = (np.flatnonzero(edges == -1) + 1).tolist()
     if mask[0]:
         starts.insert(0, 0)
     if mask[-1]:
@@ -80,8 +80,9 @@ def _runs(mask: np.ndarray):
     return list(zip(starts, ends))
 
 
-def _merge_close(runs, grid_s: np.ndarray, max_gap_s: float):
-    """Merge runs whose time gap is <= max_gap_s."""
+def _merge_close(
+    runs: list[tuple[int, int]], grid_s: np.ndarray, max_gap_s: float
+) -> list[tuple[int, int]]:
     if not runs:
         return []
     merged = [runs[0]]
@@ -102,19 +103,6 @@ def detect_intervals(
     min_duration_s: float = DEFAULT_MIN_DURATION_S,
     min_separation_s: float = DEFAULT_MIN_SEPARATION_S,
 ) -> List[Interval]:
-    """Detect structured work intervals as sustained elevated-power blocks.
-
-    Args:
-        time_s: timestamps in seconds from activity start.
-        power: power samples aligned with ``time_s``.
-        ftp: optional FTP; sets the intensity threshold to ``0.8 * ftp``. When
-            absent, a self-referential ``1.2 * mean(power > 0)`` is used.
-        min_duration_s: shortest interval to report.
-        min_separation_s: runs closer than this are bridged into one interval.
-
-    Returns:
-        Detected intervals ordered by start time.
-    """
     grid_s, power_1hz = resample_to_1hz(time_s, power)
     if grid_s.size == 0:
         return []

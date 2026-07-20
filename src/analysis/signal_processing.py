@@ -1,19 +1,11 @@
 """Signal processing utilities for data analysis"""
+
 import numpy as np
 
 
-def apply_moving_average_filter(data: np.ndarray, time_array: np.ndarray, window_seconds: float = 20.0) -> np.ndarray:
-    """
-    Apply moving average filter with time-based window
-
-    Args:
-        data: Input data array
-        time_array: Time array in seconds
-        window_seconds: Window size in seconds
-
-    Returns:
-        Filtered data array
-    """
+def apply_moving_average_filter(
+    data: np.ndarray, time_array: np.ndarray, window_seconds: float = 20.0
+) -> np.ndarray:
     if len(data) == 0 or len(time_array) == 0:
         return data
 
@@ -31,6 +23,6 @@ def apply_moving_average_filter(data: np.ndarray, time_array: np.ndarray, window
 
     # Apply moving average using convolution
     kernel = np.ones(window_samples) / window_samples
-    filtered = np.convolve(data, kernel, mode='same')
+    filtered = np.convolve(data, kernel, mode="same")
 
     return filtered

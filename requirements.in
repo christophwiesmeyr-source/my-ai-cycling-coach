@@ -1,0 +1,12 @@
+setuptools
+pyqtgraph
+PyQt6
+numpy
+pandas
+requests
+anthropic
+markdown
+
+# Local interval-detection engine (editable while co-located; pin a version
+# once extracted to its own repository).
+-e ./interval_detection

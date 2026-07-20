@@ -29,6 +29,12 @@ From the project directory, run the setup script:
 
 This creates a virtual environment, installs dependencies, and registers the app as a desktop entry (icon + launcher).
 
+For development (adds `pytest`, `ruff`, `mypy`, etc.), pass `--dev`:
+
+```bash
+./setup.sh --dev
+```
+
 ## Authentication
 
 ### intervals.icu
@@ -102,6 +108,41 @@ Navigate to the **Training** tab to use the AI features:
 1. **Generate Plan**: Fill in your training goals (target event, weekly hours, current FTP, etc.) and click **Generate Plan**. The plan is saved to `~/.my-ai-cycling-coach/plan_original.md` and displayed in the viewer.
 2. **Adapt Plan**: After completing some workouts, click **Adapt Plan**. The AI queries your recent intervals.icu activities, compares them against the plan, and writes an updated version to `~/.my-ai-cycling-coach/plan_adapted.md`.
 3. **Chat**: Use the chat panel at the bottom to ask your AI coach questions about your progress, request session advice, or discuss adjustments to the plan.
+
+## Development
+
+### Running checks
+
+```bash
+./check.sh
+```
+
+Runs `ruff check`, `ruff format --check`, `mypy`, and `pytest`, and exits non-zero if any of them fail.
+
+### Managing dependencies
+
+Dependencies are pinned with [pip-tools](https://github.com/jazzband/pip-tools) so releases are reproducible:
+
+- `requirements.in` / `requirements-dev.in` are the source of truth — the direct dependencies the project actually needs, without version pins.
+- `requirements.txt` / `requirements-dev.txt` are generated lock files with every dependency (direct and transitive) pinned to an exact version. These are what `setup.sh` installs from — never edit them by hand.
+
+To add or change a dependency, edit the relevant `.in` file, then regenerate the lock files:
+
+```bash
+source venv/bin/activate
+pip-compile --allow-unsafe --no-strip-extras requirements.in -o requirements.txt
+pip-compile --allow-unsafe --no-strip-extras requirements-dev.in -o requirements-dev.txt
+```
+
+To upgrade pinned versions (e.g. before cutting a release), add `--upgrade` to either command above.
+
+After regenerating, sync your venv to match the lock file exactly (installs additions, removes anything no longer required):
+
+```bash
+pip-sync requirements-dev.txt
+```
+
+Run `./check.sh` afterwards to confirm the project still works with the new versions before committing the updated lock files.
 
 ## License
 

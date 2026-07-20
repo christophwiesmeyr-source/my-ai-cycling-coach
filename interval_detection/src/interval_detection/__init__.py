@@ -4,6 +4,7 @@ Public API:
     detect_intervals(time_s, power, *, ftp=None, ...) -> list[Interval]
     Interval(start_s, end_s)
 """
+
 from .detector import detect_intervals
 from .smoothing import moving_average
 from .types import Interval

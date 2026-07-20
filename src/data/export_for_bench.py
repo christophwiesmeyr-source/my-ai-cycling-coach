@@ -12,6 +12,7 @@ Writes the (t, power) trace to bench/activities/<id>.csv and seeds the
 annotation file bench/labels/<id>.json with auto-derived meta (indoor /
 sport_type). Interval ground truth is added later with the label tool.
 """
+
 import sys
 from pathlib import Path
 
@@ -28,12 +29,11 @@ sys.path.insert(0, str(_BENCH_DIR))
 import labelio  # noqa: E402
 
 
-def export_activity(activity_id, client: IntervalsClient | None = None,
-                    out_dir: Path = BENCH_ACTIVITIES_DIR) -> Path:
-    """Download an activity and write its (t, power) series as CSV.
-
-    Returns the path written. Raises ValueError if the activity has no power.
-    """
+def export_activity(
+    activity_id: str,
+    client: IntervalsClient | None = None,
+    out_dir: Path = BENCH_ACTIVITIES_DIR,
+) -> Path:
     client = client or IntervalsClient()
     metadata = client._get_activity_detail(activity_id)
     activity = client.download_activity(activity_id)

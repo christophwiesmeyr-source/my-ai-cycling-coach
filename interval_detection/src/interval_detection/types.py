@@ -1,4 +1,5 @@
 """Public types for the interval detection package."""
+
 from typing import NamedTuple
 
 

@@ -1,10 +1,14 @@
 """Tool schema definitions and execution for activity data access"""
+
 import datetime
 import json
+from typing import Sequence, cast
 
 import numpy as np
+from anthropic.types import ContentBlock, ToolParam, ToolUseBlock
 
 from src.constants import ACTIVITY_HISTORY_WEEKS, GOALS_PATH
+from src.data.intervals_api import IntervalsClient
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
     elevation_changes,
@@ -19,7 +23,7 @@ from src.analysis.activity_metrics import (
 )
 from interval_detection import detect_intervals
 
-TOOLS = [
+TOOLS: list[ToolParam] = [
     {
         "name": "list_recent_activities",
         "description": (
@@ -171,63 +175,82 @@ TOOL_STATUS_MESSAGES = {
 # Best-effort durations for the power curve (seconds)
 _POWER_CURVE_WINDOWS = [5, 30, 60, 300, 600, 1200, 3600]
 _POWER_CURVE_LABELS = {
-    5: "5s", 30: "30s", 60: "1min", 300: "5min",
-    600: "10min", 1200: "20min", 3600: "60min",
+    5: "5s",
+    30: "30s",
+    60: "1min",
+    300: "5min",
+    600: "10min",
+    1200: "20min",
+    3600: "60min",
 }
 
 # Coggan 6-zone model: (label, lower % FTP inclusive, upper % FTP exclusive or None)
 _POWER_ZONES = [
-    ("Z1 Active Recovery",  0,   55),
-    ("Z2 Endurance",       55,   75),
-    ("Z3 Tempo",           75,   90),
-    ("Z4 Threshold",       90,  105),
-    ("Z5 VO2max",         105,  121),
-    ("Z6 Anaerobic",      121, None),
+    ("Z1 Active Recovery", 0, 55),
+    ("Z2 Endurance", 55, 75),
+    ("Z3 Tempo", 75, 90),
+    ("Z4 Threshold", 90, 105),
+    ("Z5 VO2max", 105, 121),
+    ("Z6 Anaerobic", 121, None),
 ]
 
 # 5-zone HR model: (label, lower % max HR inclusive, upper % max HR exclusive or None)
 _HR_ZONES = [
-    ("Z1 Recovery",   0,   60),
-    ("Z2 Endurance",  60,  70),
-    ("Z3 Tempo",      70,  80),
-    ("Z4 Threshold",  80,  90),
-    ("Z5 VO2max",     90, None),
+    ("Z1 Recovery", 0, 60),
+    ("Z2 Endurance", 60, 70),
+    ("Z3 Tempo", 70, 80),
+    ("Z4 Threshold", 80, 90),
+    ("Z5 VO2max", 90, None),
 ]
 
 
-def execute_tools(content: list, activity_client) -> list:
-    """Execute all tool-use blocks in an assistant response and return tool results."""
+def execute_tools(
+    content: Sequence[ContentBlock], activity_client: IntervalsClient
+) -> list[dict]:
     results = []
     for block in content:
         if not hasattr(block, "type") or block.type != "tool_use":
             continue
+        block = cast(ToolUseBlock, block)
         output = _execute_tool(block, activity_client)
-        results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
+        results.append(
+            {"type": "tool_result", "tool_use_id": block.id, "content": output}
+        )
     return results
 
 
-def _execute_tool(block, activity_client) -> str:
+def _execute_tool(block: ToolUseBlock, activity_client: IntervalsClient) -> str:
     if block.name == "list_recent_activities":
-        weeks = block.input.get("weeks", ACTIVITY_HISTORY_WEEKS)
+        weeks = int(cast(str, block.input.get("weeks", ACTIVITY_HISTORY_WEEKS)))
         return _list_activities(activity_client, weeks)
+    if block.name not in (
+        "get_activity_details",
+        "get_activity_power_curve",
+        "get_activity_training_load",
+        "get_activity_efficiency",
+        "get_activity_intervals",
+        "get_activity_zones",
+    ):
+        return f"Unknown tool: {block.name}"
+    activity_id = str(block.input["activity_id"])
     if block.name == "get_activity_details":
-        return _get_activity_details(activity_client, block.input["activity_id"])
+        return _get_activity_details(activity_client, activity_id)
     if block.name == "get_activity_power_curve":
-        return _get_activity_power_curve(activity_client, block.input["activity_id"])
+        return _get_activity_power_curve(activity_client, activity_id)
     if block.name == "get_activity_training_load":
-        return _get_activity_training_load(activity_client, block.input["activity_id"])
+        return _get_activity_training_load(activity_client, activity_id)
     if block.name == "get_activity_efficiency":
-        return _get_activity_efficiency(activity_client, block.input["activity_id"])
+        return _get_activity_efficiency(activity_client, activity_id)
     if block.name == "get_activity_intervals":
-        return _get_activity_intervals(activity_client, block.input["activity_id"])
-    if block.name == "get_activity_zones":
-        return _get_activity_zones(activity_client, block.input["activity_id"])
-    return f"Unknown tool: {block.name}"
+        return _get_activity_intervals(activity_client, activity_id)
+    return _get_activity_zones(activity_client, activity_id)
 
 
-def _list_activities(activity_client, weeks: int) -> str:
+def _list_activities(activity_client: IntervalsClient, weeks: int) -> str:
     weeks = min(max(weeks, 1), 52)
-    after = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(weeks=weeks)
+    after = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        weeks=weeks
+    )
     activities = activity_client.list_activities(after)
 
     if not activities:
@@ -252,7 +275,6 @@ def _list_activities(activity_client, weeks: int) -> str:
 
 
 def _fmt_duration(seconds: float) -> str:
-    """Format a duration as H?h MM m SS s, dropping the hour part when zero."""
     secs = int(round(seconds))
     h, rem = divmod(secs, 3600)
     m, s = divmod(rem, 60)
@@ -260,14 +282,13 @@ def _fmt_duration(seconds: float) -> str:
 
 
 def _load_goals() -> dict:
-    """Load stored training goals (FTP, max HR, weight). Empty dict on failure."""
     try:
         return json.loads(GOALS_PATH.read_text())
     except Exception:
         return {}
 
 
-def _get_activity_details(activity_client, activity_id) -> str:
+def _get_activity_details(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
     except Exception as exc:
@@ -296,7 +317,9 @@ def _get_activity_details(activity_client, activity_id) -> str:
         lines.append("  Moving: unavailable (no moving stream from data source)")
 
     # Elevation
-    ascent, descent = elevation_changes(activity.get_time_series("altitude"), time_array)
+    ascent, descent = elevation_changes(
+        activity.get_time_series("altitude"), time_array
+    )
     if ascent or descent:
         lines.append("Elevation:")
         lines.append(f"  Ascent: {ascent:.0f} m")
@@ -307,20 +330,30 @@ def _get_activity_details(activity_client, activity_id) -> str:
     header = "Averages (moving | full):" if dual else "Averages:"
     avg_lines = []
 
-    def _avg_line(label, series, unit, scale=1.0, fmt="{:.0f}"):
+    def _avg_line(
+        label: str,
+        series: np.ndarray,
+        unit: str,
+        scale: float = 1.0,
+        fmt: str = "{:.0f}",
+    ) -> None:
         full = weighted_average(series, time_array)
         if full is None:
             return
         if dual:
             mv = weighted_average(series, time_array, mask)
             mv_str = fmt.format(mv * scale) if mv is not None else "—"
-            avg_lines.append(f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}".rstrip())
+            avg_lines.append(
+                f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}".rstrip()
+            )
         else:
             avg_lines.append(f"  {label}: {fmt.format(full * scale)} {unit}".rstrip())
 
     _avg_line("Power", activity.get_time_series("power"), "W")
     _avg_line("Heart rate", activity.get_time_series("heart_rate"), "bpm")
-    _avg_line("Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}")
+    _avg_line(
+        "Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}"
+    )
     _avg_line("Cadence", activity.get_time_series("cadence"), "rpm")
 
     if avg_lines:
@@ -346,7 +379,9 @@ def _get_activity_details(activity_client, activity_id) -> str:
         if active_total > 0:
             coasting = float(np.sum(w * (active[:n] & ~pedaling[:n])))
             of = "moving time" if mask is not None else "activity"
-            ped_lines.append(f"  Coasting: {100 * coasting / active_total:.0f}% of {of}")
+            ped_lines.append(
+                f"  Coasting: {100 * coasting / active_total:.0f}% of {of}"
+            )
 
         if ped_lines:
             lines.append("Pedalling:")
@@ -367,7 +402,9 @@ def _get_activity_details(activity_client, activity_id) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_power_curve(activity_client, activity_id) -> str:
+def _get_activity_power_curve(
+    activity_client: IntervalsClient, activity_id: str
+) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
     except Exception as exc:
@@ -390,7 +427,9 @@ def _get_activity_power_curve(activity_client, activity_id) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_training_load(activity_client, activity_id) -> str:
+def _get_activity_training_load(
+    activity_client: IntervalsClient, activity_id: str
+) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
     except Exception as exc:
@@ -438,18 +477,23 @@ def _get_activity_training_load(activity_client, activity_id) -> str:
         lines.append(f"  Efficiency Factor: {np_watts / avg_hr:.2f} W/beat")
 
     if avg_power is not None and weight:
-        lines.append(f"  Avg power-to-weight: {avg_power / weight:.2f} W/kg (weight {weight:.0f} kg)")
+        lines.append(
+            f"  Avg power-to-weight: {avg_power / weight:.2f} W/kg (weight {weight:.0f} kg)"
+        )
     elif avg_power is not None:
         lines.append("  Power-to-weight: set weight in Training Goals.")
 
     return "\n".join(lines)
 
 
-def _moving_halves(time_array, mask):
-    """Boolean masks splitting the moving (or, absent a mask, full) duration in half."""
+def _moving_halves(
+    time_array: np.ndarray, mask: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
     w = sample_weights(time_array)
     n = len(w)
-    active = np.asarray(mask, dtype=bool)[:n] if mask is not None else np.ones(n, dtype=bool)
+    active = (
+        np.asarray(mask, dtype=bool)[:n] if mask is not None else np.ones(n, dtype=bool)
+    )
     aw = w * active
     total = float(np.sum(aw))
     if total <= 0:
@@ -459,7 +503,7 @@ def _moving_halves(time_array, mask):
     return active & (cum <= half), active & (cum > half)
 
 
-def _get_activity_efficiency(activity_client, activity_id) -> str:
+def _get_activity_efficiency(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
     except Exception as exc:
@@ -483,7 +527,16 @@ def _get_activity_efficiency(activity_client, activity_id) -> str:
         p2 = weighted_average(power, time_array, h2)
         hr1 = weighted_average(hr, time_array, h1)
         hr2 = weighted_average(hr, time_array, h2)
-        if all(v is not None and v > 0 for v in (p1, p2, hr1, hr2)):
+        if (
+            p1 is not None
+            and p2 is not None
+            and hr1 is not None
+            and hr2 is not None
+            and p1 > 0
+            and p2 > 0
+            and hr1 > 0
+            and hr2 > 0
+        ):
             r1, r2 = p1 / hr1, p2 / hr2
             drift = (r1 - r2) / r1 * 100
             lines.append(
@@ -510,7 +563,7 @@ def _get_activity_efficiency(activity_client, activity_id) -> str:
     return "\n".join(lines)
 
 
-def _get_activity_intervals(activity_client, activity_id) -> str:
+def _get_activity_intervals(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
     except Exception as exc:
@@ -518,7 +571,9 @@ def _get_activity_intervals(activity_client, activity_id) -> str:
 
     power = activity.get_time_series("power")
     if power is None or len(power) == 0:
-        return f"No power data for activity {activity_id}; interval detection needs power."
+        return (
+            f"No power data for activity {activity_id}; interval detection needs power."
+        )
 
     time_array = activity.get_time_array()
     n = min(len(time_array), len(power))
@@ -530,14 +585,22 @@ def _get_activity_intervals(activity_client, activity_id) -> str:
 
     intervals = detect_intervals(time_array, power, ftp=ftp)
     if not intervals:
-        return f"No structured work intervals (≥1 min) detected in activity {activity_id}."
+        return (
+            f"No structured work intervals (≥1 min) detected in activity {activity_id}."
+        )
 
-    hr = activity.get_time_series("heart_rate")
+    hr: np.ndarray | None = activity.get_time_series("heart_rate")
     hr = np.asarray(hr, dtype=float)[:n] if hr is not None and len(hr) > 0 else None
-    cadence = activity.get_time_series("cadence")
-    cadence = np.asarray(cadence, dtype=float)[:n] if cadence is not None and len(cadence) > 0 else None
+    cadence: np.ndarray | None = activity.get_time_series("cadence")
+    cadence = (
+        np.asarray(cadence, dtype=float)[:n]
+        if cadence is not None and len(cadence) > 0
+        else None
+    )
 
-    header = f"Activity {activity_id}: {len(intervals)} structured work interval(s) detected"
+    header = (
+        f"Activity {activity_id}: {len(intervals)} structured work interval(s) detected"
+    )
     header += f" (FTP {ftp} W):" if ftp else " (no FTP set — %FTP omitted):"
     lines = [header]
 
@@ -547,8 +610,10 @@ def _get_activity_intervals(activity_client, activity_id) -> str:
         t_slice = time_array[s_idx:e_idx]
         p_slice = power[s_idx:e_idx]
 
-        parts = [f"Interval {i}: {_fmt_duration(iv.start_s)}–{_fmt_duration(iv.end_s)} "
-                 f"({_fmt_duration(iv.duration_s)})"]
+        parts = [
+            f"Interval {i}: {_fmt_duration(iv.start_s)}–{_fmt_duration(iv.end_s)} "
+            f"({_fmt_duration(iv.duration_s)})"
+        ]
 
         avg_p = weighted_average(p_slice, t_slice)
         if avg_p is not None:
@@ -566,8 +631,10 @@ def _get_activity_intervals(activity_client, activity_id) -> str:
             if len(valid) > 0:
                 third = max(1, len(valid) // 3)
                 start_hr, end_hr = np.mean(valid[:third]), np.mean(valid[-third:])
-                parts.append(f"HR {start_hr:.0f}→{end_hr:.0f} (avg {np.mean(valid):.0f}, "
-                             f"max {np.max(valid):.0f})")
+                parts.append(
+                    f"HR {start_hr:.0f}→{end_hr:.0f} (avg {np.mean(valid):.0f}, "
+                    f"max {np.max(valid):.0f})"
+                )
 
         if cadence is not None:
             avg_cad = weighted_average(cadence[s_idx:e_idx], t_slice)
@@ -579,7 +646,12 @@ def _get_activity_intervals(activity_client, activity_id) -> str:
     return "\n".join(lines)
 
 
-def _zone_breakdown(series, zones, reference, dt: float) -> list:
+def _zone_breakdown(
+    series: np.ndarray,
+    zones: list[tuple[str, int, int | None]],
+    reference: float,
+    dt: float,
+) -> list[str]:
     valid = ~np.isnan(series)
     total_sec = int(np.sum(valid) * dt)
     lines = []
@@ -599,7 +671,7 @@ def _zone_breakdown(series, zones, reference, dt: float) -> list:
     return lines
 
 
-def _get_activity_zones(activity_client, activity_id) -> str:
+def _get_activity_zones(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         goals = json.loads(GOALS_PATH.read_text())
     except Exception:
@@ -629,7 +701,9 @@ def _get_activity_zones(activity_client, activity_id) -> str:
         else:
             lines.append("Power zones: no power data for this activity.")
     else:
-        lines.append("Power zones: set FTP in Training Goals to see power zone breakdown.")
+        lines.append(
+            "Power zones: set FTP in Training Goals to see power zone breakdown."
+        )
 
     if max_hr_bpm:
         hr = activity.get_time_series("heart_rate")
@@ -639,6 +713,8 @@ def _get_activity_zones(activity_client, activity_id) -> str:
         else:
             lines.append("HR zones: no heart rate data for this activity.")
     else:
-        lines.append("HR zones: set max heart rate in Training Goals to see HR zone breakdown.")
+        lines.append(
+            "HR zones: set max heart rate in Training Goals to see HR zone breakdown."
+        )
 
     return "\n".join(lines)

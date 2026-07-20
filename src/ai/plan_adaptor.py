@@ -1,9 +1,18 @@
 """Plan adaptor agent — compares original plan to recent activities and produces an adapted plan"""
+
 import datetime
 import json
 from typing import Any
 
-from src.constants import APP_DIR, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH, AI_MODEL, ACTIVITY_HISTORY_WEEKS, SESSIONS_LOG_PATH
+from src.constants import (
+    APP_DIR,
+    PLAN_ORIGINAL_PATH,
+    PLAN_ADAPTED_PATH,
+    AI_MODEL,
+    ACTIVITY_HISTORY_WEEKS,
+    SESSIONS_LOG_PATH,
+)
+from src.data.intervals_api import IntervalsClient
 from .client import get_client
 from .tools import TOOLS, execute_tools
 
@@ -49,15 +58,18 @@ def _build_log_section() -> str:
     for plan_date, entry in sorted(log.items()):
         completed = entry.get("completed_date", "")
         comment = entry.get("comment", "")
-        line = f"- Plan date {plan_date}: completed {completed}" if completed else f"- Plan date {plan_date}: not yet marked complete"
+        line = (
+            f"- Plan date {plan_date}: completed {completed}"
+            if completed
+            else f"- Plan date {plan_date}: not yet marked complete"
+        )
         if comment:
-            line += f" — \"{comment}\""
+            line += f' — "{comment}"'
         lines.append(line)
     return "\n".join(lines) + "\n\n"
 
 
-def adapt_plan(activity_client) -> str:
-    """Run the agentic loop to adapt the original plan using recent activity data."""
+def adapt_plan(activity_client: IntervalsClient) -> str:
     if not PLAN_ORIGINAL_PATH.exists():
         raise FileNotFoundError(
             "No original plan found. Generate a plan first using the Training tab."
@@ -91,7 +103,12 @@ def adapt_plan(activity_client) -> str:
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
-            messages.append({"role": "user", "content": execute_tools(response.content, activity_client)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": execute_tools(response.content, activity_client),
+                }
+            )
             continue
 
         return _extract_text(response.content)

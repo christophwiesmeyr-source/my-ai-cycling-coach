@@ -1,6 +1,13 @@
 #!/bin/bash
 # Quick start script for My AI Cycling Coach
 
+DEV=false
+for arg in "$@"; do
+    case "$arg" in
+        --dev) DEV=true ;;
+    esac
+done
+
 echo "🚀 My AI Cycling Coach - Setup"
 echo "================================"
 
@@ -27,8 +34,13 @@ if [ $? -ne 0 ]; then
 fi
 
 # Install dependencies
-echo "📥 Installing dependencies..."
-pip install -q -r requirements.txt
+if [ "$DEV" = true ]; then
+    echo "📥 Installing dependencies (including dev tools)..."
+    pip install -q -r requirements-dev.txt
+else
+    echo "📥 Installing dependencies..."
+    pip install -q -r requirements.txt
+fi
 if [ $? -ne 0 ]; then
     echo "❌ Failed to install requirements"
     exit 1

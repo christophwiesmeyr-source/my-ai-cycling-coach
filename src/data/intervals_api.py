@@ -17,6 +17,7 @@ NOT been independently verified — check them against a real
 download_activity() call and adjust _normalize_activity / _build_activity if
 any don't match.
 """
+
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -45,9 +46,9 @@ class IntervalsClient:
         self.athlete_id = athlete_id or config.get("athlete_id")
         if not self.api_key or not self.athlete_id:
             raise IntervalsClientError(
-                f'Missing intervals.icu credentials. Create {self.CONFIG_FILE} with '
+                f"Missing intervals.icu credentials. Create {self.CONFIG_FILE} with "
                 f'{{"athlete_id": "i123456", "api_key": "..."}} '
-                f'(intervals.icu -> Settings -> Developer Settings).'
+                f"(intervals.icu -> Settings -> Developer Settings)."
             )
         self.auth = ("API_KEY", self.api_key)
 
@@ -58,12 +59,6 @@ class IntervalsClient:
         return {}
 
     def list_activities(self, after: datetime) -> List[Dict[str, Any]]:
-        """List activities after a given date.
-
-        Returns dicts normalized to a stable shape (id, start_date_local,
-        sport_type, distance, elapsed_time, average_watts, average_heartrate,
-        trainer) that the rest of the app expects.
-        """
         params = {"oldest": after.strftime("%Y-%m-%dT%H:%M:%S")}
         try:
             response = requests.get(
@@ -73,7 +68,9 @@ class IntervalsClient:
                 timeout=30,
             )
         except requests.RequestException as e:
-            raise IntervalsClientError(f"Failed to load intervals.icu activities: {e}") from e
+            raise IntervalsClientError(
+                f"Failed to load intervals.icu activities: {e}"
+            ) from e
         if response.status_code != 200:
             raise IntervalsClientError(
                 f"Failed to load intervals.icu activities: {response.status_code} {response.text}"
@@ -93,13 +90,12 @@ class IntervalsClient:
             "trainer": bool(raw.get("trainer")),
         }
 
-    def download_activity(self, activity_id) -> Activity:
-        """Download a single activity and convert it to an Activity object."""
+    def download_activity(self, activity_id: str) -> Activity:
         metadata = self._get_activity_detail(activity_id)
         streams = self._get_activity_streams(activity_id)
         return self._build_activity(metadata, streams)
 
-    def _get_activity_detail(self, activity_id) -> Dict[str, Any]:
+    def _get_activity_detail(self, activity_id: str) -> Dict[str, Any]:
         try:
             response = requests.get(
                 f"{self.BASE_URL}/activity/{activity_id}",
@@ -114,7 +110,7 @@ class IntervalsClient:
             )
         return response.json()
 
-    def _get_activity_streams(self, activity_id) -> List[Dict[str, Any]]:
+    def _get_activity_streams(self, activity_id: str) -> List[Dict[str, Any]]:
         try:
             response = requests.get(
                 f"{self.BASE_URL}/activity/{activity_id}/streams.json",
@@ -130,7 +126,9 @@ class IntervalsClient:
             )
         return response.json()
 
-    def _build_activity(self, metadata: Dict[str, Any], streams: List[Dict[str, Any]]) -> Activity:
+    def _build_activity(
+        self, metadata: Dict[str, Any], streams: List[Dict[str, Any]]
+    ) -> Activity:
         start_date = metadata.get("start_date_local") or metadata.get("start_date")
         if not start_date:
             raise IntervalsClientError("Activity metadata is missing start time.")

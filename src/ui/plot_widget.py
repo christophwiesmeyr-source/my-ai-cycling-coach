@@ -1,41 +1,57 @@
 """Plot widget for interactive data visualization"""
+
 from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QPen
+from PyQt6.QtCore import pyqtSignal, QObject, Qt
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QGraphicsSceneMouseEvent
+
+from interval_detection import Interval
 
 from src.data import Activity
 from src.analysis import apply_moving_average_filter
 
 
+class ClickableRegionItem(pg.LinearRegionItem):
+    """A read-only LinearRegionItem that emits sigClicked when left-clicked."""
+
+    sigClicked = pyqtSignal(object)
+
+    def mouseClickEvent(self, ev: QGraphicsSceneMouseEvent) -> None:
+        super().mouseClickEvent(ev)
+        if not ev.isAccepted() and ev.button() == Qt.MouseButton.LeftButton:
+            ev.accept()
+            self.sigClicked.emit(self)
+
+
 class PlotWidget(pg.GraphicsLayoutWidget):
     """Widget for plotting activity data with interactive selection"""
-    
+
     # Signal emitted when a time range is selected
     selection_changed = pyqtSignal(int, int)  # start_idx, end_idx
-    
-    def __init__(self, parent=None):
+
+    def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent=parent)
-        
+
         self.current_activity: Optional[Activity] = None
         self.primary_metric: Optional[str] = None
         self.secondary_metric: Optional[str] = None
 
-        self.setBackground('w')
+        self.setBackground("w")
 
         # Main plot (primary metric)
         self.plot = self.addPlot(row=0, col=0, title="Metrics")
         self.plot.showGrid(x=True, y=True, alpha=0.3)
-        self.plot.setLabel('bottom', 'Time (s)')
+        self.plot.setLabel("bottom", "Time (s)")
 
         # Secondary y-axis viewbox
-        self.plot.showAxis('right')
-        self.plot.getAxis('right').setLabel('')
+        self.plot.showAxis("right")
+        self.plot.getAxis("right").setLabel("")
         self.secondary_view = pg.ViewBox()
         self.plot.scene().addItem(self.secondary_view)
-        self.plot.getAxis('right').linkToView(self.secondary_view)
+        self.plot.getAxis("right").linkToView(self.secondary_view)
         self.secondary_view.setXLink(self.plot)
 
         # Keep the views aligned when resizing
@@ -44,40 +60,46 @@ class PlotWidget(pg.GraphicsLayoutWidget):
         # Data lines
         self.line_primary: Optional[pg.PlotDataItem] = None
         self.line_secondary: Optional[pg.PlotDataItem] = None
-        
+
         # Selection region
         self.selection_region = pg.LinearRegionItem()
         self.selection_region.setZValue(10)
         self.plot.addItem(self.selection_region)
-        
+
+        # Detected interval overlays (behind the interactive selection region)
+        self.detected_intervals: list[Interval] = []
+        self.interval_regions: list[ClickableRegionItem] = []
+
         # Connect selection change
-        self.selection_region.sigRegionChangeFinished.connect(self._on_selection_changed)
-    
-    def _update_views(self):
-        """Keep secondary view geometry and axis sync with primary plot"""
+        self.selection_region.sigRegionChangeFinished.connect(
+            self._on_selection_changed
+        )
+
+    def _update_views(self) -> None:
         self.secondary_view.setGeometry(self.plot.getViewBox().sceneBoundingRect())
-        self.secondary_view.linkedViewChanged(self.plot.getViewBox(), self.secondary_view.XAxis)
-    
-    def plot_activity(self, activity: Activity, primary_metric: Optional[str], secondary_metric: Optional[str], 
-                     primary_filtered: bool = False, secondary_filtered: bool = False):
-        """
-        Plot activity data
-        
-        Args:
-            activity: Activity object to plot
-            primary_metric: Name of metric for primary plot
-            secondary_metric: Name of metric for secondary plot
-        """
+        self.secondary_view.linkedViewChanged(
+            self.plot.getViewBox(), self.secondary_view.XAxis
+        )
+
+    def plot_activity(
+        self,
+        activity: Activity,
+        primary_metric: Optional[str],
+        secondary_metric: Optional[str],
+        primary_filtered: bool = False,
+        secondary_filtered: bool = False,
+    ) -> None:
         self.current_activity = activity
         self.primary_metric = primary_metric
         self.secondary_metric = secondary_metric
-        
+
         # Clear previous plot data
         self.plot.clear()
         self.secondary_view.clear()
 
         # Re-add selection region to the primary plot
         self.plot.addItem(self.selection_region)
+        self._draw_interval_regions()
 
         # Get time array
         time_array = activity.get_time_array()
@@ -91,14 +113,15 @@ class PlotWidget(pg.GraphicsLayoutWidget):
             if primary_filtered:
                 data = apply_moving_average_filter(data, time_array, 20.0)
             self.line_primary = self.plot.plot(
-                time_array, data,
+                time_array,
+                data,
                 pen=pg.mkPen(color=QColor(25, 118, 210), width=2),
-                name=primary_metric
+                name=primary_metric,
             )
-            self.plot.setLabel('left', primary_metric.replace('_', ' ').title())
+            self.plot.setLabel("left", primary_metric.replace("_", " ").title())
         else:
             self.line_primary = None
-            self.plot.setLabel('left', '')
+            self.plot.setLabel("left", "")
 
         # Plot secondary metric on right y-axis (optional)
         if secondary_metric and secondary_metric in activity.available_metrics:
@@ -106,49 +129,77 @@ class PlotWidget(pg.GraphicsLayoutWidget):
             if secondary_filtered:
                 data = apply_moving_average_filter(data, time_array, 20.0)
             self.line_secondary = pg.PlotDataItem(
-                time_array, data,
+                time_array,
+                data,
                 pen=pg.mkPen(color=QColor(244, 67, 54), width=2),
-                name=secondary_metric
+                name=secondary_metric,
             )
             self.secondary_view.addItem(self.line_secondary)
-            self.plot.getAxis('right').setLabel(secondary_metric.replace('_', ' ').title())
+            self.plot.getAxis("right").setLabel(
+                secondary_metric.replace("_", " ").title()
+            )
         else:
             self.line_secondary = None
-            self.plot.getAxis('right').setLabel('')
+            self.plot.getAxis("right").setLabel("")
 
-        # Set initial selection region to full range
-        self.selection_region.setRegion((time_array[0], time_array[-1]))
+        # Set initial selection region to the first 10% of the activity
+        activity_span = time_array[-1] - time_array[0]
+        self.selection_region.setRegion(
+            (time_array[0], time_array[0] + 0.1 * activity_span)
+        )
 
         # Auto-scale
         self.plot.autoRange()
         self.secondary_view.autoRange()
 
-    def _on_selection_changed(self):
-        """Handle selection region change"""
+    def set_detected_intervals(self, intervals: list[Interval]) -> None:
+        self.detected_intervals = intervals
+        self._draw_interval_regions()
+
+    def _draw_interval_regions(self) -> None:
+        for region in self.interval_regions:
+            self.plot.removeItem(region)
+        self.interval_regions = []
+
+        for interval in self.detected_intervals:
+            region = ClickableRegionItem(
+                values=(interval.start_s, interval.end_s),
+                movable=False,
+                brush=pg.mkBrush(255, 152, 0, 50),
+                pen=pg.mkPen(color=QColor(255, 152, 0, 150), width=1),
+            )
+            region.setZValue(5)
+            region.sigClicked.connect(self._on_interval_region_clicked)
+            self.plot.addItem(region)
+            self.interval_regions.append(region)
+
+    def _on_interval_region_clicked(self, region: ClickableRegionItem) -> None:
+        self.selection_region.setRegion(region.getRegion())
+
+    def _on_selection_changed(self) -> None:
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
-        
+
         # Get selected time range
         min_time, max_time = self.selection_region.getRegion()
-        
+
         # Convert time values to indices
         time_array = self.current_activity.get_time_array()
-        
+
         if len(time_array) == 0:
             return
-        
+
         # Find closest indices
-        start_idx = np.searchsorted(time_array, min_time, side='left')
-        end_idx = np.searchsorted(time_array, max_time, side='right')
-        
+        start_idx = np.searchsorted(time_array, min_time, side="left")
+        end_idx = np.searchsorted(time_array, max_time, side="right")
+
         # Clamp to valid range
         start_idx = max(0, min(start_idx, len(time_array) - 1))
         end_idx = max(start_idx + 1, min(end_idx, len(time_array)))
-        
+
         self.selection_changed.emit(start_idx, end_idx)
-    
-    def reset_view(self):
-        """Reset plot to show all data"""
+
+    def reset_view(self) -> None:
         if not self.current_activity or len(self.current_activity.data) == 0:
             return
 

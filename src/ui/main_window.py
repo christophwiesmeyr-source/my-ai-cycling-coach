@@ -80,8 +80,8 @@ class MainWindow(QMainWindow):
 
         training_widget = TrainingTab(self.activity_client)
 
-        tab_widget.addTab(analysis_widget, "Analysis")
         tab_widget.addTab(training_widget, "Training")
+        tab_widget.addTab(analysis_widget, "Analysis")
 
     def _create_activity_sync_controls(self, layout):
         """Create activity synchronization controls"""

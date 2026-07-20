@@ -1,7 +1,10 @@
 """Main UI window for data visualization"""
 
 import datetime
+import json
 from typing import Optional
+
+from interval_detection import detect_intervals
 
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -21,7 +24,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from src.constants import APP_NAME
+from src.constants import APP_NAME, GOALS_PATH
 from src.data import Activity, IntervalsClient, IntervalsClientError
 from src.analysis import StatisticsCalculator
 from .plot_widget import PlotWidget
@@ -278,7 +281,33 @@ class MainWindow(QMainWindow):
 
         self._update_metric_dropdowns()
         self._plot_data()
+        self._update_detected_intervals()
         self._update_activity_stats()
+
+    def _update_detected_intervals(self) -> None:
+        if not self.current_activity:
+            self.plot_widget.set_detected_intervals([])
+            return
+
+        power = self.current_activity.get_time_series("power")
+        if len(power) == 0:
+            self.plot_widget.set_detected_intervals([])
+            return
+
+        time_array = self.current_activity.get_time_array()
+        n = min(len(time_array), len(power))
+
+        intervals = detect_intervals(time_array[:n], power[:n], ftp=self._load_ftp())
+        self.plot_widget.set_detected_intervals(intervals)
+
+    def _load_ftp(self) -> Optional[int]:
+        try:
+            goals = json.loads(GOALS_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        ftp = goals.get("current_ftp_watts")
+        return int(ftp) if ftp else None
 
     def _update_activity_stats(self) -> None:
         statistics_string = self._format_stats_output(0, -1)

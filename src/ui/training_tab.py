@@ -43,6 +43,7 @@ class TrainingTab(QWidget):
         self.chat_session = ChatSession()
         self._active_worker = None
         self._loading_sessions = False
+        self._stream_text_start: int | None = None
         self._init_ui()
         self._load_existing_plans()
         self._load_sessions_table()

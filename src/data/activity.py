@@ -47,7 +47,7 @@ class Activity:
         if end_idx is None:
             end_idx = len(self.data)
         
-        return self.data.iloc[start_idx:end_idx][field_name].values
+        return np.asarray(self.data.iloc[start_idx:end_idx][field_name].values)
     
     def get_time_array(self, start_idx: Optional[int] = None, 
                        end_idx: Optional[int] = None) -> np.ndarray:

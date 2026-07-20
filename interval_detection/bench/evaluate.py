@@ -195,9 +195,11 @@ def evaluate(predict=None, ftp: float = ATHLETE_FTP, activity_ids=None,
 
     overall = {"tp": 0, "fp": 0, "fn": 0}
     place = {"indoor": {"tp": 0, "fp": 0, "fn": 0}, "outdoor": {"tp": 0, "fp": 0, "fn": 0}}
-    boundary_all = []
-    dstart_all, dend_all = [], []
-    type_total, type_found = Counter(), Counter()
+    boundary_all: list[float] = []
+    dstart_all: list[float] = []
+    dend_all: list[float] = []
+    type_total: Counter[str] = Counter()
+    type_found: Counter[str] = Counter()
     type_boundary = defaultdict(list)
     n_act = 0
     n_excluded = 0

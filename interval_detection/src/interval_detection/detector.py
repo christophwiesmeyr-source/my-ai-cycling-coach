@@ -66,13 +66,13 @@ def _intensity_threshold(power_1hz: np.ndarray, ftp: Optional[float]) -> float:
     return NO_FTP_MULTIPLIER * float(active.mean())
 
 
-def _runs(mask: np.ndarray):
+def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     """Maximal runs of True as (start, end) index pairs, end exclusive."""
     if mask.size == 0:
         return []
     edges = np.diff(mask.astype(np.int8))
-    starts = list(np.flatnonzero(edges == 1) + 1)
-    ends = list(np.flatnonzero(edges == -1) + 1)
+    starts: list[int] = (np.flatnonzero(edges == 1) + 1).tolist()
+    ends: list[int] = (np.flatnonzero(edges == -1) + 1).tolist()
     if mask[0]:
         starts.insert(0, 0)
     if mask[-1]:

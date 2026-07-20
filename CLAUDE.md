@@ -11,7 +11,7 @@ The README.md file contains all information regarding setup.
 - `pytest` — run all tests
 - `ruff check .` — lint
 - `ruff format .` — format code
-- `mypy src/` — type checking
+- `mypy ./` — type checking
 
 ## Project Structure
 
@@ -31,6 +31,9 @@ The README.md file contains all information regarding setup.
 - Logging: Root logger is set up in `src/logging_setup.py`, use logger = logging.getLogger(__name__) if logging required.
 - Do not use `print()` statements, use the logger; Exception: Standalone scripts which benefit from direct feedback through command line
 - Do not use `*` imports
+- Comments: 
+    - Only use comments where they explain a non-obvious Why
+    - Do not use Function docstrings, the code with type hints should self-document
 
 ## Git
 

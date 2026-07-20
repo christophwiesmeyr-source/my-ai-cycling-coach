@@ -39,7 +39,7 @@ class StatisticsCalculator:
         Returns:
             Dictionary with keys like 'Distance Total', 'Power Max', etc., each as [value, unit]
         """
-        out = {}
+        out: dict[str, list[float | str]] = {}
         time_array = activity.get_time_array()
 
         if end_idx == -1:

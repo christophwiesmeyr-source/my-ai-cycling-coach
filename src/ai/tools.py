@@ -3,6 +3,7 @@ import datetime
 import json
 
 import numpy as np
+from anthropic.types import ToolParam
 
 from src.constants import ACTIVITY_HISTORY_WEEKS, GOALS_PATH
 from src.analysis.statistics import rolling_max
@@ -19,7 +20,7 @@ from src.analysis.activity_metrics import (
 )
 from interval_detection import detect_intervals
 
-TOOLS = [
+TOOLS: list[ToolParam] = [
     {
         "name": "list_recent_activities",
         "description": (
@@ -483,7 +484,10 @@ def _get_activity_efficiency(activity_client, activity_id) -> str:
         p2 = weighted_average(power, time_array, h2)
         hr1 = weighted_average(hr, time_array, h1)
         hr2 = weighted_average(hr, time_array, h2)
-        if all(v is not None and v > 0 for v in (p1, p2, hr1, hr2)):
+        if (
+            p1 is not None and p2 is not None and hr1 is not None and hr2 is not None
+            and p1 > 0 and p2 > 0 and hr1 > 0 and hr2 > 0
+        ):
             r1, r2 = p1 / hr1, p2 / hr2
             drift = (r1 - r2) / r1 * 100
             lines.append(

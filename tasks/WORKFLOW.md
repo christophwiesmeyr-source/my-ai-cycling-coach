@@ -8,13 +8,21 @@ not assume a specific tool.
 
 Stories live in `tasks/*.md`, one file per story, named `NNNN-kebab-title.md`
 with a global, never-reused running number (template: `tasks/TEMPLATE.md`).
-Status lives in frontmatter and moves through:
 
-```
-draft -> ready -> staged -> in-progress -> done
-```
+Two frontmatter fields track a story independently:
 
-`release` is set once a story is staged (e.g. `v3`).
+- `status` tracks definition completeness and execution: `draft -> ready ->
+  in-progress -> done`.
+- `release` (e.g. `v3`) tracks which release the story is planned for. It
+  can be set at any time, including while a story is still `draft` — that's
+  the normal way to assign a batch of not-yet-fully-defined stories to an
+  upcoming release during planning.
+
+A story is "staged" once both are true: `release` is set and `status` is
+`ready`. That combination — not a status value of its own — is what
+`/implement-story` looks for. This lets you assign stories to a release
+early and keep refining them individually until each one is ready,
+without implementation ever starting on an underspecified story.
 
 ## Drafting a story
 
@@ -41,11 +49,12 @@ needs no further guessing.
 
 ## Implementing a story
 
-Goal: implement a `staged` story and prove it meets its own Test Plan.
+Goal: implement a staged story (`status: ready` and `release` set) and
+prove it meets its own Test Plan.
 
-1. Refuse to proceed if status is not `staged` (a `ready` story is well-
-   defined but not yet committed to a release, and therefore has no
-   branch to implement on).
+1. Refuse to proceed unless `release` is set AND `status` is `ready`. A
+   `draft` story with a `release` assigned is not yet implementable — it
+   still needs to be drafted to `ready` first.
 2. Confirm the branch this work will happen on was forked from the
    release branch named in the story's `release` field. Check the
    branch's fork point via its reflog (oldest entry, e.g. `branch:

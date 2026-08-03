@@ -1,7 +1,9 @@
 ---
 title:
-status: draft   # draft -> ready -> staged -> in-progress -> done
-release:        # e.g. v3 -- set when staged into a release
+status: draft   # draft -> ready -> in-progress -> done
+release:        # e.g. v3 -- target release; can be set any time, even
+                 # while still draft. Implementation may only start once
+                 # BOTH release is set AND status is ready.
 ---
 
 ## Problem / Context

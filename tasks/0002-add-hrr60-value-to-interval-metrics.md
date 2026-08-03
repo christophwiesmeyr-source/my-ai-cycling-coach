@@ -1,12 +1,14 @@
 ---
-title:
-status: draft   # see tasks/WORKFLOW.md for the lifecycle
-release:        # see tasks/WORKFLOW.md; can be set before status: ready
+title: Add HRR60 to the numbers computed for intervals
+status: draft
+release: v3
 ---
 
 ## Problem / Context
 
-<!-- Why this story exists. What triggers it, who/what it affects. -->
+For the coach to judge the quality of intervals the Heart Rate Recovery in 60 seconds is a relevant number. Therefore it should be given to the coach when they request intervals through the corresponding tool.
+
+Note: This requires a fairly accurate interval boundary detection (see 0001).
 
 ## Acceptance Criteria
 

@@ -1,12 +1,14 @@
 ---
-title:
-status: draft   # see tasks/WORKFLOW.md for the lifecycle
-release:        # see tasks/WORKFLOW.md; can be set before status: ready
+title: Track FTP over time
+status: draft
+release:
 ---
 
 ## Problem / Context
 
-<!-- Why this story exists. What triggers it, who/what it affects. -->
+Currently the FTP is a constant number for the application. The detection of intervals is, however, dependent on the FTP number. So if the FTP number changes over time, the interval detection will be sensitive to that.
+
+FTP can either be tracked over time or interval detection can be made independent of the FTP number.
 
 ## Acceptance Criteria
 

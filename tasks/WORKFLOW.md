@@ -12,7 +12,14 @@ with a global, never-reused running number (template: `tasks/TEMPLATE.md`).
 Two frontmatter fields track a story independently:
 
 - `status` tracks definition completeness and execution: `draft -> ready ->
-  in-progress -> done`.
+  in-progress -> done`. `cancelled` is a separate terminal status, reachable
+  from `draft`, `ready`, or `in-progress` when a story is dropped from the
+  plan — not from `done`, since reverting delivered work is a different
+  kind of change. When cancelling, add a one-line reason at the top of
+  Problem / Context (e.g. `Cancelled: superseded by 0007`) rather than a
+  new section. Keep the story's number and `release` field as-is; numbers
+  are never reused and `release` still records what it was targeted for.
+  Reviving a cancelled story means setting `status` back to `draft`.
 - `release` (e.g. `v3`) tracks which release the story is planned for. It
   can be set at any time, including while a story is still `draft` — that's
   the normal way to assign a batch of not-yet-fully-defined stories to an
@@ -23,6 +30,8 @@ A story is "staged" once both are true: `release` is set and `status` is
 `/implement-story` looks for. This lets you assign stories to a release
 early and keep refining them individually until each one is ready,
 without implementation ever starting on an underspecified story.
+`cancelled` stories are terminal: both `/draft-story` and `/implement-story`
+should refuse to act on one unless the user explicitly revives it first.
 
 ## Drafting a story
 

@@ -1,6 +1,8 @@
 ---
 title:
-status: draft   # draft -> ready -> in-progress -> done
+status: draft   # draft -> ready -> in-progress -> done; cancelled is a
+                 # terminal status reachable from draft, ready, or
+                 # in-progress
 release:        # e.g. v3 -- target release; can be set any time, even
                  # while still draft. Implementation may only start once
                  # BOTH release is set AND status is ready.

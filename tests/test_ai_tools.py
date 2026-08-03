@@ -489,6 +489,66 @@ class TestGetActivityIntervals:
         assert "% FTP)" in result
         assert "HR " in result and "→" in result  # start->end drift reported
         assert "rpm" in result
+        assert (
+            "HRR60" in result
+        )  # recovery-window power (100 W) backs off well below FTP
+
+    def test_contaminated_by_next_interval_omits_hrr60(self, tmp_path: Path) -> None:
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        n = 1500
+        power = np.full(n, 100.0)
+        power[100:400] = 300.0  # interval 1: 300 s @ 300 W
+        power[450:750] = 300.0  # interval 2 starts 50 s after interval 1 ends
+        hr = np.full(n, 140.0)
+        hr[100:400] = 170.0
+        hr[450:750] = 170.0
+        activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
+        client = Mock()
+        client.download_activity.return_value = activity
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_intervals(client, "42")
+        lines = {
+            line.split(":")[0].strip(): line
+            for line in result.splitlines()
+            if line.strip().startswith("Interval")
+        }
+        assert "Interval 1" in lines and "Interval 2" in lines
+        assert "HRR60" not in lines["Interval 1"]
+        assert "HRR60" in lines["Interval 2"]
+
+    def test_insufficient_trailing_data_omits_hrr60(self, tmp_path: Path) -> None:
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        n = 450
+        power = np.full(n, 100.0)
+        power[100:400] = 300.0  # interval ends ~50 s before recording ends
+        hr = np.full(n, 140.0)
+        hr[100:400] = 170.0
+        activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
+        client = Mock()
+        client.download_activity.return_value = activity
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_intervals(client, "42")
+        assert "Interval 1:" in result
+        assert "HRR60" not in result
+
+    def test_sustained_power_during_recovery_omits_hrr60(self, tmp_path: Path) -> None:
+        goals = tmp_path / "goals.json"
+        goals.write_text(json.dumps({"current_ftp_watts": 250}))
+        n = 1500
+        power = np.full(n, 100.0)
+        power[600:1000] = 300.0  # interval: 400 s @ 300 W
+        power[1000:1060] = 200.0  # 80% FTP recovery window — rider kept working
+        hr = np.full(n, 140.0)
+        hr[600:1000] = np.linspace(150, 175, 400)  # HR still drops after the effort
+        activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
+        client = Mock()
+        client.download_activity.return_value = activity
+        with patch("src.ai.tools.GOALS_PATH", goals):
+            result = _get_activity_intervals(client, "42")
+        assert "Interval 1:" in result
+        assert "HRR60" not in result
 
     def test_no_intervals_when_flat(self, tmp_path: Path) -> None:
         goals = tmp_path / "goals.json"

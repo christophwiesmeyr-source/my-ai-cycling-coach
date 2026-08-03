@@ -9,6 +9,7 @@ import pytest
 from src.data.activity import Activity
 from src.analysis.activity_metrics import (
     elevation_changes,
+    heart_rate_recovery_60s,
     normalized_power,
     pedaling_mask,
     representative_dt,
@@ -215,3 +216,69 @@ class TestPowerMetrics:
 
     def test_weighted_average_empty_returns_none(self) -> None:
         assert weighted_average(np.array([]), np.array([])) is None
+
+
+# ---------------------------------------------------------------------------
+# heart_rate_recovery_60s
+# ---------------------------------------------------------------------------
+
+
+class TestHeartRateRecovery60s:
+    def _clear_recovery_streams(
+        self, n: int = 200, end_s: int = 100
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        t = np.arange(n, dtype=float)
+        hr = np.full(n, 140.0)
+        hr[end_s + 1 :] = 100.0  # sharp recovery drop right after the effort ends
+        power = np.full(n, 250.0)
+        power[end_s + 1 :] = 50.0  # rider backs off during recovery
+        return hr, power, t
+
+    def test_clear_recovery_returns_bpm_dropped(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        hrr = heart_rate_recovery_60s(hr, power, t, end_s=100, ftp=250)
+        assert hrr == pytest.approx(40.0)
+
+    def test_next_interval_inside_window_returns_none(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        assert (
+            heart_rate_recovery_60s(hr, power, t, end_s=100, next_start_s=140, ftp=250)
+            is None
+        )
+
+    def test_insufficient_trailing_data_returns_none(self) -> None:
+        hr, power, t = self._clear_recovery_streams(n=150, end_s=100)
+        assert heart_rate_recovery_60s(hr, power, t, end_s=100, ftp=250) is None
+
+    def test_nan_hr_window_returns_none(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        hr[95:106] = np.nan  # blanks out the end-of-effort window
+        assert heart_rate_recovery_60s(hr, power, t, end_s=100, ftp=250) is None
+
+    def test_sustained_power_returns_none_with_ftp(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        power[100:] = 200.0  # 80% FTP, above the 55% backoff threshold
+        assert heart_rate_recovery_60s(hr, power, t, end_s=100, ftp=250) is None
+
+    def test_sustained_power_returns_none_with_no_ftp_fallback(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        power[100:] = 200.0  # above 0.5 * interval_avg_power=250 => 125
+        assert (
+            heart_rate_recovery_60s(hr, power, t, end_s=100, interval_avg_power=250.0)
+            is None
+        )
+
+    def test_low_power_passes_no_ftp_fallback(self) -> None:
+        hr, power, t = self._clear_recovery_streams()
+        assert heart_rate_recovery_60s(
+            hr, power, t, end_s=100, interval_avg_power=250.0
+        ) == pytest.approx(40.0)
+
+    def test_median_ignores_outlier_in_recovery_window(self) -> None:
+        # A single glitchy sample (e.g. a dropped-then-recovered HR strap
+        # reading) within the +60s window should not skew the result the way
+        # a mean would.
+        hr, power, t = self._clear_recovery_streams()
+        hr[158] = 180.0
+        hrr = heart_rate_recovery_60s(hr, power, t, end_s=100, ftp=250)
+        assert hrr == pytest.approx(40.0)

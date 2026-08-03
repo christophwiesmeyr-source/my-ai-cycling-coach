@@ -30,3 +30,9 @@ release:        # e.g. v3 -- target release; can be set any time, even
 ## Out of Scope
 
 <!-- Explicit non-goals, to prevent scope creep during implementation. -->
+
+## Implementation Notes
+
+<!-- Filled in during/after implementation, not during drafting. What was
+     actually built, especially where it deviates from Technical
+     Decisions and why, plus any concrete results worth recording. -->

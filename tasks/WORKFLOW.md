@@ -48,6 +48,8 @@ needs no further guessing.
      current codebase — read source, don't guess)
    - Test Plan (how the user will verify the implementation)
    - Out of Scope
+   Leave Implementation Notes empty — it's filled in during implementation,
+   not drafting.
 3. Update the file after each round of discussion. Keep `status: draft`
    throughout.
 4. Only set `status: ready` once every section (Acceptance Criteria,
@@ -82,9 +84,14 @@ prove it meets its own Test Plan.
    before proceeding.
 6. Walk through every Test Plan item and verify it against the actual
    implementation; report anything that couldn't be verified.
-7. Only set `status: done` once all Acceptance Criteria are met and the
-   Test Plan is verified. Don't commit the changes — leave that for the
-   user to review and commit.
+7. Write the Implementation Notes section: what was actually built,
+   especially where it deviates from the drafted Technical Decisions and
+   why, plus any concrete results worth recording (e.g. a measured
+   improvement). This is not optional — treat it as part of the
+   deliverable, not an afterthought.
+8. Only set `status: done` once all Acceptance Criteria are met, the Test
+   Plan is verified, and Implementation Notes is filled in. Don't commit
+   the changes — leave that for the user to review and commit.
 
 If a story is underspecified enough that a code-related decision isn't
 covered by Technical Decisions, stop and ask rather than guessing.

@@ -8,7 +8,11 @@ median sample spacing, so it works on a raw (possibly non-uniform) series or a
 
 import numpy as np
 
-DEFAULT_WINDOW_S = 20.0
+# A shorter window tracks a real power step more closely (less boundary lag)
+# at the cost of making run detection more sensitive to a real mid-effort
+# dip; detector.py compensates with a larger merge-bridge gap
+# (DEFAULT_MIN_SEPARATION_S). The two were tuned together against the bench.
+DEFAULT_WINDOW_S = 6.0
 
 
 def moving_average(

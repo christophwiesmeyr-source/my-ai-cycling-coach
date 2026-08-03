@@ -2,7 +2,7 @@
 
 v1 strategy (chosen after looking at real data — changepoint detection
 over-segments because rides are full of surges): an interval is a **sustained
-period of elevated power**. On the 20 s-averaged signal:
+period of elevated power**. On the smoothed signal (``smoothing.DEFAULT_WINDOW_S``):
 
   1. set an intensity threshold: ``0.8 * ftp`` if FTP is known, else
      ``1.2 * mean(power > 0)`` (self-referential fallback for portability);
@@ -29,7 +29,12 @@ from .types import Interval
 
 # Operating envelope (see README). Defaults the consuming app can override.
 DEFAULT_MIN_DURATION_S = 60.0
-DEFAULT_MIN_SEPARATION_S = 30.0
+# Bridge gap tolerance, tuned together with smoothing.DEFAULT_WINDOW_S: the
+# shorter smoothing window that tightens boundaries also makes a real
+# mid-effort power dip visible as a run break, so the bridge gap needs to be
+# larger than the dip to still merge it into one interval (bench-verified,
+# see tasks/0001-improve-interval-boundary-detection.md).
+DEFAULT_MIN_SEPARATION_S = 45.0
 
 # Intensity threshold relative to FTP, and the fallback multiple of mean power.
 FTP_FRACTION = 0.8

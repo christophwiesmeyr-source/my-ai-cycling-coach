@@ -4,10 +4,11 @@ Deliberately separate from the label tool — labelling must stay blind to the
 detector (no anchoring bias) and edit-safe. This tool never writes. It reuses
 ``labelio``, the package smoother, the detector, and ``evaluate.match``.
 
-Per activity it shows the power trace and its 20 s average, the 0.8 x FTP
-detection threshold, and two tracks: ground-truth intervals (green = found,
-red = missed) and detections (green = TP, orange = false positive). Drawing the
-smoothed curve against the threshold makes the boundary behaviour visible.
+Per activity it shows the power trace and its smoothed average (the same
+window the detector uses), the 0.8 x FTP detection threshold, and two
+tracks: ground-truth intervals (green = found, red = missed) and detections
+(green = TP, orange = false positive). Drawing the smoothed curve against
+the threshold makes the boundary behaviour visible.
 
 Usage:
     python interval_detection/bench/view_results.py             # worst cases first
@@ -34,6 +35,7 @@ import labelio  # noqa: E402
 import evaluate  # noqa: E402
 from interval_detection import detect_intervals, moving_average  # noqa: E402
 from interval_detection.detector import FTP_FRACTION  # noqa: E402
+from interval_detection.smoothing import DEFAULT_WINDOW_S  # noqa: E402
 
 
 def result_for_activity(
@@ -71,7 +73,13 @@ def result_for_activity(
 def plot_activity(r: dict, ax: Any) -> None:
     ax.clear()
     ax.plot(r["t"], r["p"], color="0.8", lw=0.6, label="power")
-    ax.plot(r["t"], r["smoothed"], color="tab:blue", lw=1.1, label="power (20 s)")
+    ax.plot(
+        r["t"],
+        r["smoothed"],
+        color="tab:blue",
+        lw=1.1,
+        label=f"power ({DEFAULT_WINDOW_S:g} s)",
+    )
     ax.axhline(r["threshold"], color="tab:red", ls="--", lw=0.8, label="0.8·FTP")
 
     trans = blended_transform_factory(ax.transData, ax.transAxes)

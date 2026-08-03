@@ -188,3 +188,64 @@ def total_work_kj(power: np.ndarray, time_array: np.ndarray) -> Optional[float]:
     w = sample_weights(time_array)
     n = min(len(p), len(w))
     return float(np.sum(p[:n] * w[:n]) / 1000.0)
+
+
+# Recovery is only "passive" (and thus a meaningful HRR60 reading) if mean
+# power over the 60s window stays below this fraction of FTP — matches the
+# existing Z1 Active-Recovery/Z2 boundary (tools.py's _POWER_ZONES).
+RECOVERY_MAX_FTP_FRAC = 0.55
+# Fallback backoff threshold when FTP isn't known, relative to the interval's
+# own average power.
+RECOVERY_MAX_INTERVAL_FRAC = 0.5
+
+
+def _window_mask(time_array: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    return (time_array >= lo) & (time_array <= hi)
+
+
+def _window_median(
+    series: np.ndarray, time_array: np.ndarray, lo: float, hi: float
+) -> Optional[float]:
+    # Median, not weighted_average's mean — HR recovery within a short window is
+    # non-linear, so a mean is skewed towards whichever end of the window has
+    # more/faster-changing samples; the median is not.
+    s = np.asarray(series, dtype=float)
+    mask = _window_mask(time_array, lo, hi)
+    n = min(len(s), len(mask))
+    valid = mask[:n] & ~np.isnan(s[:n])
+    if not valid.any():
+        return None
+    return float(np.median(s[:n][valid]))
+
+
+def heart_rate_recovery_60s(
+    hr: np.ndarray,
+    power: np.ndarray,
+    time_array: np.ndarray,
+    end_s: float,
+    next_start_s: Optional[float] = None,
+    ftp: Optional[float] = None,
+    interval_avg_power: Optional[float] = None,
+) -> Optional[float]:
+    if next_start_s is not None and next_start_s < end_s + 60:
+        return None
+    if time_array is None or len(time_array) == 0 or time_array[-1] < end_s + 60:
+        return None
+
+    threshold = None
+    if ftp:
+        threshold = RECOVERY_MAX_FTP_FRAC * ftp
+    elif interval_avg_power:
+        threshold = RECOVERY_MAX_INTERVAL_FRAC * interval_avg_power
+    if threshold is not None:
+        recovery_power = weighted_average(
+            power, time_array, mask=_window_mask(time_array, end_s, end_s + 60)
+        )
+        if recovery_power is not None and recovery_power > threshold:
+            return None
+
+    end_hr = _window_median(hr, time_array, end_s - 5, end_s)
+    recovery_hr = _window_median(hr, time_array, end_s + 57.5, end_s + 62.5)
+    if end_hr is None or recovery_hr is None:
+        return None
+    return end_hr - recovery_hr

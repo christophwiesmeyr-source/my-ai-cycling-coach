@@ -12,6 +12,7 @@ from src.data.intervals_api import IntervalsClient
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
     elevation_changes,
+    heart_rate_recovery_60s,
     moving_mask,
     normalized_power,
     pedaling_mask,
@@ -124,10 +125,14 @@ TOOLS: list[ToolParam] = [
         "description": (
             "Detect the structured work intervals (reps) in an activity and report how each "
             "was executed: time range, duration, average power and %FTP, Normalized Power, "
-            "average/max heart rate with start→end drift, and cadence. Use this to check "
+            "average/max heart rate with start→end drift, cadence, and HRR60 (heart rate "
+            "recovery: bpm dropped in the 60s after the effort ends). Use this to check "
             "whether prescribed intervals were completed and how they were paced — controlled "
-            "and even, fading, or near-maximal. FTP and max HR are loaded from stored goals; "
-            "needs power data. Only structured efforts ≥1 min are reported (not surges/climbs)."
+            "and even, fading, or near-maximal — and HRR60 to judge recovery quality. FTP and "
+            "max HR are loaded from stored goals; needs power data. Only structured efforts "
+            "≥1 min are reported (not surges/climbs). HRR60 is omitted when it can't be "
+            "measured cleanly (next interval starts too soon, recording ends too soon, HR data "
+            "missing, or the rider kept working through the recovery window)."
         ),
         "input_schema": {
             "type": "object",
@@ -640,6 +645,20 @@ def _get_activity_intervals(activity_client: IntervalsClient, activity_id: str) 
             avg_cad = weighted_average(cadence[s_idx:e_idx], t_slice)
             if avg_cad is not None:
                 parts.append(f"{avg_cad:.0f} rpm")
+
+        if hr is not None:
+            next_start_s = intervals[i].start_s if i < len(intervals) else None
+            hrr = heart_rate_recovery_60s(
+                hr,
+                power,
+                time_array,
+                iv.end_s,
+                next_start_s=next_start_s,
+                ftp=ftp,
+                interval_avg_power=avg_p,
+            )
+            if hrr is not None:
+                parts.append(f"HRR60 {hrr:.0f} bpm")
 
         lines.append("  " + " | ".join(parts))
 

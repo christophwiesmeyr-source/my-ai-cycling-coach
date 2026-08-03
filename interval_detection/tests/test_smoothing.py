@@ -25,11 +25,13 @@ def test_edges_stay_in_range_no_zero_dip() -> None:
 
 
 def test_window_from_median_dt() -> None:
-    # 2 s sampling, 20 s window -> 10-sample average
+    # 2 s sampling, 20 s window -> 10-sample average. Window passed explicitly
+    # so this test verifies "window derived from median dt" independent of
+    # whatever DEFAULT_WINDOW_S happens to be.
     t = np.arange(0, 200, 2, dtype=float)
     p = np.zeros(len(t))
     p[len(t) // 2] = 100.0
-    sm = moving_average(t, p)
+    sm = moving_average(t, p, window_s=20.0)
     # the spike is spread over ~10 samples, so its peak drops to ~100/10
     assert sm.max() < 20.0
 
@@ -40,5 +42,5 @@ def test_short_input_returned_unchanged() -> None:
     )
 
 
-def test_default_window_is_20s() -> None:
-    assert DEFAULT_WINDOW_S == 20.0
+def test_default_window_is_6s() -> None:
+    assert DEFAULT_WINDOW_S == 6.0

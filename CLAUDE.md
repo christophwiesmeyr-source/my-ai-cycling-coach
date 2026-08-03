@@ -35,6 +35,11 @@ The README.md file contains all information regarding setup.
     - Only use comments where they explain a non-obvious Why
     - Do not use Function docstrings, the code with type hints should self-document
 
+## Stories
+
+- Work is planned as stories in `tasks/*.md` (template: `tasks/TEMPLATE.md`); the drafting and implementation process is defined tool-agnostically in `tasks/WORKFLOW.md`
+- In Claude Code, use `/draft-story` and `/implement-story` to run that process
+
 ## Git
 
 - Commits are done manually

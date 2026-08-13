@@ -1,7 +1,7 @@
 ---
 title: Sync AI coach context with live training goals
 status: ready
-release:
+release: v4
 ---
 
 ## Problem / Context

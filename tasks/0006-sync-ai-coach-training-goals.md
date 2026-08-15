@@ -226,15 +226,25 @@ non-empty per this story's Problem/Context) on every run.
   editing `GOALS_PATH` between two `build_system()` calls on the same session
   (no `reload_plans()`) changes the second call's output.
 - Manual end-to-end verification (generate plan → edit FTP in Training Goals
-  form → Adapt Plan → ask chat coach for current FTP) — **NOT independently
-  verified live.** This environment has no display and no configured
-  Anthropic/intervals.icu credentials to run the real Qt app. Verified by
-  tracing the code path instead: `training_tab.py`'s autosave writes the new
-  FTP to `goals.json` unchanged (out of scope); `PlanAdaptorWorker.run()` calls
-  the now-updated `adapt_plan()`, which reads that file fresh via
-  `load_goals()` and both feeds it into the prompt and prepends it to the
-  adapted plan text rendered in the "Adapted" tab; `ChatWorker.run()` calls
-  `session.build_system()` fresh on every send (not cached), so the coach's
-  system prompt picks up the new FTP on the very next message with no reload
-  or restart. This traces correctly against the implementation but has not
-  been exercised against the live Anthropic API or a real Qt session.
+  form → Adapt Plan → ask chat coach for current FTP) — **verified live by
+  the user**, in two passes:
+  1. At implementation time, this environment had no display and no
+     configured Anthropic/intervals.icu credentials to run the real Qt app,
+     so the flow was verified by tracing the code path instead:
+     `training_tab.py`'s autosave writes the new FTP to `goals.json`
+     unchanged (out of scope); `PlanAdaptorWorker.run()` calls the
+     now-updated `adapt_plan()`, which reads that file fresh via
+     `load_goals()` and both feeds it into the prompt and prepends it to
+     the adapted plan text rendered in the "Adapted" tab; `ChatWorker.run()`
+     calls `session.build_system()` fresh on every send (not cached), so
+     the coach's system prompt picks up the new FTP on the very next
+     message with no reload or restart.
+  2. The user then ran the actual flow against the real app in `--test`
+     mode. This surfaced an unrelated pre-existing bug in `adapt_plan()`
+     (silent truncation on a real-sized plan — `max_tokens` too low, and a
+     fallback path that dropped the result without saving or erroring),
+     fixed separately in story 0009. With that fix merged into this
+     branch, the user completed the full sequence — generate plan, edit
+     FTP, Adapt Plan, ask the chat coach for current FTP — and confirmed
+     the live FTP value reached both the adapted plan and the chat coach's
+     answer, matching the code-path trace above.

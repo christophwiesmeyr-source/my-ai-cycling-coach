@@ -1,6 +1,6 @@
 ---
 title: Generate sessions from the adapted plan, refresh the Sessions table, and cache the adaptation loop's repeated context
-status: ready   # see tasks/WORKFLOW.md for the lifecycle
+status: done   # see tasks/WORKFLOW.md for the lifecycle
 release: v4
 ---
 
@@ -64,34 +64,42 @@ function this story is already adding.
 
 ## Acceptance Criteria
 
-- [ ] A new function generates a structured session CSV from the adapted
+- [x] A new function generates a structured session CSV from the adapted
       plan text (mirroring `plan_generator._build_sessions_prompt()` /
       `_extract_csv()` / the single-call structure of
       `generate_sessions()`) and writes it to `SESSIONS_ADAPTED_PATH`.
-- [ ] `adapt_sessions()` never trusts the LLM-generated CSV for past
+- [x] `adapt_sessions()` never trusts the LLM-generated CSV for past
       sessions: after generating the new CSV, rows with `date < today` are
       taken verbatim from `SESSIONS_ORIGINAL_PATH`, and only rows with
       `date >= today` come from the freshly generated CSV — regardless of
       what the model produced for historical dates.
-- [ ] `PlanAdaptorWorker.run()` calls this after `adapt_plan()` succeeds,
+- [x] `PlanAdaptorWorker.run()` calls this after `adapt_plan()` succeeds,
       before emitting `finished` — mirroring `PlanGeneratorWorker.run()`'s
       `generate_plan()` → `generate_sessions()` sequence.
-- [ ] If session-CSV generation fails after a successful plan adaptation,
+- [x] If session-CSV generation fails after a successful plan adaptation,
       the adapted plan itself is still saved and `finished` still fires
       with it — a CSV-generation bug must never make a successful
       adaptation report as failed (would regress story 0009's fix into a
       different flavor of "silent/confusing failure").
-- [ ] `training_tab.py`'s `_load_sessions_table()` prefers
+- [x] `training_tab.py`'s `_load_sessions_table()` prefers
       `SESSIONS_ADAPTED_PATH` over `SESSIONS_ORIGINAL_PATH` when the former
       exists — mirroring `chat_session._build_session_table()`'s existing
       preference.
-- [ ] `training_tab.py`'s `_on_plan_adapted()` calls `_load_sessions_table()`
+- [x] `training_tab.py`'s `_on_plan_adapted()` calls `_load_sessions_table()`
       after rendering the adapted plan, so the Sessions table visibly
       refreshes without an app restart or tab switch.
-- [ ] `adapt_plan()`'s Claude API calls use prompt caching
+- [x] `adapt_plan()`'s Claude API calls use prompt caching
       (`cache_control: {"type": "ephemeral"}`) so turn *N+1* reads turn
       *N*'s shared prefix (system prompt, original plan, earlier tool
       results) from cache instead of re-billing it at full price.
+- [x] Every single-shot Claude call in `plan_generator.py` and
+      `plan_adaptor.py` (`generate_plan()`, `generate_sessions()`,
+      `adapt_sessions()`) checks `stop_reason` and raises a clear error if
+      the response wasn't `end_turn`, mirroring the truncation detection
+      `adapt_plan()`'s streaming loop already has — a truncated response
+      must never be silently accepted as complete (see Technical Decisions
+      for why this was pulled into scope, and for why these ended up as
+      `client.messages.stream()` calls rather than `.create()`).
 
 ## Technical Decisions
 
@@ -151,6 +159,52 @@ function this story is already adding.
   `adapt_sessions()` call.** Caching only pays off across ≥2 requests
   sharing a prefix within the TTL; `adapt_sessions()` is a single request,
   so there's nothing for a breakpoint there to be read back by.
+- **Truncation detection extended to `generate_plan()` and
+  `generate_sessions()`, not just the new `adapt_sessions()`.** Discovered
+  during manual verification, not drafting: a real Adapt Plan run silently
+  produced a `sessions_adapted.csv` missing an entire tail of weeks (all of
+  September) because `adapt_sessions()`'s single `client.messages.create()`
+  call hit `max_tokens=8192` and nothing checked `stop_reason` — the
+  drop-and-warn safeguard only caught the one obviously-truncated row at
+  the cut point, understating the real damage as "1 session dropped" when
+  actually a third of the plan was silently missing. `adapt_plan()`'s
+  streaming loop already guards against exactly this (raises clearly on a
+  non-`end_turn` stop), but that check was never applied to any of the
+  three plain `.create()` calls — `generate_plan()` and `generate_sessions()`
+  in `plan_generator.py` have the identical unchecked gap and the identical
+  risk (an original plan spanning many weeks is at least as likely to hit
+  the cap as an adapted one). Fixing only `adapt_sessions()` would leave two
+  call sites with the same latent bug, one number away from resurfacing as
+  a fresh "story" of its own — pulled into this story's scope instead of
+  filed separately, since it's the same root cause the story is already
+  elbow-deep in. Added a shared `_raise_if_truncated(stop_reason, what)` in
+  `plan_generator.py`, raising `RuntimeError` if `stop_reason != "end_turn"`
+  — reused by `adapt_sessions()` in `plan_adaptor.py`. Also bumped
+  `max_tokens` from `8192` to `32768` on all three calls, matching
+  `adapt_plan()`'s existing loop — `max_tokens` is a cap, not a spend, so
+  raising it has no cost impact on responses that don't need it, only
+  headroom for the ones that do.
+- **`max_tokens=32768` on a plain `create()` call requires switching to
+  `stream()`.** The very next real run broke immediately and deterministically
+  with `ValueError: Streaming is required for operations that may take
+  longer than 10 minutes` — the anthropic SDK's own
+  `_calculate_nonstreaming_timeout()` rejects any non-streaming call whose
+  `max_tokens` implies more than ~10 minutes of generation
+  (`3600 * max_tokens / 128_000 > 600`, i.e. `max_tokens > ~21,333`), before
+  the request is even sent. `8192` was safely under that; `32768` wasn't.
+  Rather than hand-tune `max_tokens` down to just under a threshold that
+  could shift with future SDK/model changes, switched all three calls
+  (`generate_plan()`, `generate_sessions()`, `adapt_sessions()`) from
+  `client.messages.create()` to `client.messages.stream() as stream: ...
+  stream.get_final_message()` — the exact pattern `adapt_plan()`'s loop
+  already uses successfully, with no ceiling on `max_tokens` and identical
+  `message.content` / `.stop_reason` / `.usage` shape, so no other code
+  needed to change. Updated the fake-client test fixtures in
+  `tests/test_ai_plan_adaptor.py` to drop the now-dead `.create()` fake path
+  (`_FakeCreateResponse`/`create_response=`) and exercise `adapt_sessions()`
+  through the same `_FakeResponse`/`.stream()` fakes `adapt_plan()`'s tests
+  already used — no `generate_plan()`/`generate_sessions()` fake-client
+  tests exist yet either way (pre-existing gap, not introduced here).
 
 ## Test Plan
 
@@ -171,6 +225,11 @@ function this story is already adding.
   the adapted plan as successful — test at whatever level the
   `try/except` boundary lands (the new function, or a thin wrapper called
   from `PlanAdaptorWorker`).
+- Unit tests for `_raise_if_truncated()`: no-op on `end_turn`, raises
+  `RuntimeError` mentioning both the `stop_reason` and the given context on
+  anything else. Unit test: `adapt_sessions()` with a mocked `stop_reason`
+  of `"max_tokens"` raises rather than writing a truncated
+  `SESSIONS_ADAPTED_PATH`.
 - Manual verification (no existing test coverage for `training_tab.py` —
   this file is UI-only and tested manually project-wide): in `--test`
   mode, click Adapt Plan, confirm the Sessions table updates to reflect the
@@ -203,6 +262,224 @@ function this story is already adding.
 
 ## Implementation Notes
 
-<!-- Filled in during/after implementation, not during drafting. What was
-     actually built, especially where it deviates from Technical
-     Decisions and why, plus any concrete results worth recording. -->
+Built essentially as drafted, on branch `story/0010-adapted-plan-sessions-and-caching`
+off `release/v4`:
+
+- `adapt_sessions(plan_text)` added to `src/ai/plan_adaptor.py`, reusing
+  `plan_generator._build_sessions_prompt()` / `_extract_csv()` directly, plus
+  a new `_SESSIONS_SYSTEM` constant extracted from `plan_generator.py`'s
+  `generate_sessions()` (was previously an inline string) so the two call
+  sites share the identical system prompt instead of duplicating it.
+- `_splice_past_sessions()` implements the deterministic splice: parses the
+  generated CSV and `SESSIONS_ORIGINAL_PATH` with `csv.DictReader`, keeps
+  `date < today` rows from the original, `date >= today` rows from the
+  generated CSV, merges and re-sorts by `date`. Uses plain ISO-8601 string
+  comparison rather than `date.fromisoformat` — lexical ordering is correct
+  for `YYYY-MM-DD` and avoids per-row exception handling. Falls back to the
+  generated CSV as-is (with a `logger.warning`) if the original is missing
+  or fails to parse.
+- **Goals-loading Technical Decision resolved to the "story 0006 merged"
+  branch**: `adapt_sessions()` calls `src.goals.load_goals()` directly (no
+  `GOALS_PATH` fallback) — confirmed during planning that 0006 was already
+  merged into `release/v4` and `plan_adaptor.py` already imports
+  `load_goals()` for other use.
+- `PlanAdaptorWorker.run()` (`src/ui/workers.py`) now calls `adapt_sessions()`
+  in its own `try/except` after `adapt_plan()` succeeds; a CSV-generation
+  failure is logged but `finished` still fires with the adapted plan text.
+- `training_tab.py`'s `_load_sessions_table()` now prefers
+  `SESSIONS_ADAPTED_PATH` when present (same pattern as
+  `chat_session._build_session_table()`), and `_on_plan_adapted()` calls it
+  after rendering so the table refreshes without a restart/tab switch.
+- Prompt caching in `adapt_plan()`'s loop: system prompt is a single
+  `cache_control`-tagged block; the first user message is tagged too; on
+  each `tool_use` turn the breakpoint is explicitly moved forward (stripped
+  from the previous last message, added to the new tool-result message)
+  rather than left stacked on every historical message — keeps the request
+  under the API's 4-`cache_control`-block cap regardless of loop length.
+- Test coverage: extended `tests/test_ai_plan_adaptor.py` with splice tests,
+  `adapt_sessions()` end-to-end tests (fake client), and caching tests
+  asserting the breakpoint moves rather than stacks. Added
+  `tests/test_ui_workers.py` (first test file for `workers.py` — confirmed
+  `QThread.run()` is callable directly without a `QApplication`/real thread)
+  covering the CSV-failure-doesn't-roll-back-the-plan behavior.
+- **Bug found and fixed during the user's manual verification pass**: the
+  first real Adapt Plan run in `--test` mode produced no
+  `sessions_adapted.csv`. `app.log` showed
+  `AttributeError: 'ThinkingBlock' object has no attribute 'text'` inside
+  `adapt_sessions()` — the model returned a `ThinkingBlock` ahead of the CSV
+  text block, and `message.content[0]` isn't always the text block. The
+  new CSV-failure `try/except` in `PlanAdaptorWorker.run()` worked exactly
+  as designed (caught it, still saved the adapted plan, still emitted
+  `finished`), but the CSV genuinely never got written — a real bug, not a
+  false alarm. The identical `content[0]` assumption was already present
+  in `plan_generator.py`'s `generate_plan()` and `generate_sessions()`
+  (pre-existing, not introduced by this story, but sharing the exact same
+  fragile pattern `adapt_sessions()` was written to mirror). Fixed all three
+  call sites by adding `_extract_text_content()` to `plan_generator.py` —
+  scans `message.content` for the first block(s) with a `.text` attribute
+  instead of indexing `content[0]` directly (same technique
+  `plan_adaptor._extract_text()` already used for the multi-turn loop, just
+  not applied to the single-call sites). Added regression tests: an
+  `_extract_text_content` unit test with a leading fake `ThinkingBlock` in
+  `tests/test_ai_plan_generator.py`, and an `adapt_sessions()` end-to-end
+  test with the same in `tests/test_ai_plan_adaptor.py`.
+- **Second bug found on the next manual retry**: with the `ThinkingBlock`
+  fix in place, `adapt_sessions()` got further but then raised
+  `ValueError: dict contains fields not in fieldnames: None` inside
+  `_splice_past_sessions()`. Root cause: the freshly model-generated CSV had
+  a row with more comma-separated values than declared header columns (an
+  unescaped comma in a free-text field like `description`, despite the
+  prompt asking for none) — `csv.DictReader` stashes that overflow under a
+  `None` restkey, and `csv.DictWriter.writerows()` rejects any key not in
+  its declared `fieldnames`. `SESSIONS_ORIGINAL_PATH` itself was fine; the
+  malformed row came from the model's fresh output. Initial fix was
+  `extrasaction="ignore"` on the writer, but investigating further showed
+  this doesn't just drop trailing overflow — when the stray comma lands
+  *before* the last column, every field after it silently shifts (e.g. real
+  cooldown/description text ends up discarded in the overflow while
+  cooldown/description are written holding what should've been main_set's
+  content). That's worse than a clean failure: plausible-looking but wrong
+  data with no indication anything was off. Replaced with
+  `_drop_malformed_rows()`: any row containing DictReader's `None` overflow
+  key *or* a `None` value (too few fields) is dropped outright rather than
+  written, and `_splice_past_sessions()`/`adapt_sessions()` now return
+  `tuple[str, int]` (csv text, dropped-row count) instead of a bare `str`.
+  `fieldnames` for the writer comes from `DictReader.fieldnames` (the actual
+  header), not a data row's `.keys()`, so a malformed row 0 can't corrupt
+  the column list either. The no-original fallback path also runs the same
+  malformed-row filter (previously it returned the raw generated CSV
+  untouched) but does *not* apply the past/future date split in that case —
+  with nothing to splice against, there's nothing to protect for past
+  dates, so date-filtering there would have silently dropped legitimate
+  past-dated rows instead of preserving them. Added regression tests for
+  both the trailing-overflow case and the earlier-comma shift case
+  (`test_drops_row_with_comma_shifted_fields_instead_of_corrupting`,
+  asserting the misassigned value never appears in the output).
+- **UX addition beyond the original draft, requested after the bugs above
+  made the failure mode's silence obvious in practice**: a CSV-generation
+  failure previously only surfaced in `app.log` — the user had no on-screen
+  indication the Sessions table hadn't updated, and dropped rows (the fix
+  above) had no visibility at all. Added two signals on `PlanAdaptorWorker`
+  (`src/ui/workers.py`): `sessions_failed = pyqtSignal()` for a full
+  `adapt_sessions()` exception, and `sessions_incomplete = pyqtSignal(int)`
+  carrying the dropped-row count for a partial success. Both are emitted
+  *after* `finished` (not instead of, deliberately ordered after) so the
+  adapted plan is already rendered on-screen before the modal warning
+  appears — emitting first would block plan rendering behind a dialog with
+  no context yet. Wired to new `_on_sessions_failed()` /
+  `_on_sessions_incomplete()` slots in `training_tab.py`, each showing a
+  `QMessageBox.warning` with wording specific to which case occurred. No
+  change to `_load_sessions_table()`'s fallback logic was needed — since
+  `SESSIONS_ADAPTED_PATH` is only ever written after `_splice_past_sessions`
+  returns (whether or not rows were dropped), a full failure naturally
+  leaves it untouched (absent → `SESSIONS_ORIGINAL_PATH` shown, or holding
+  the last successful adaptation, correct to keep either way), while a
+  partial success (some rows dropped) still writes the file normally with
+  just those rows missing. Added tests in `tests/test_ui_workers.py` for
+  both signals' emission order relative to `finished`, and for the
+  no-emission cases (clean success, full failure).
+- **Root cause of the dropped row, and a targeted prompt fix**: the user
+  found the actual malformed row in their real `sessions_adapted.csv` — an
+  unquoted `main_set` field containing a natural-language comma ("...NP
+  target, fuel 60-80g carbs/hr and electrolytes from hour 1"). The sessions
+  prompt already told the model the quoting rule ("do not wrap a field in
+  quotes unless it contains a comma") but gave no worked example, and models
+  follow a concrete example far more reliably than an abstract rule —
+  especially for a free-text field like `main_set`/`description`, which is
+  exactly where a model reaches for a natural comma. Added a worked example
+  row to `_build_sessions_prompt()` in `plan_generator.py` (shared by both
+  `generate_sessions()` and `adapt_sessions()`) showing a comma-containing
+  field correctly wrapped in double quotes. This is a lower-risk, more
+  targeted fix than switching the CSV delimiter (considered and set aside —
+  that would touch `_extract_csv()`'s header check and every
+  `csv.DictReader`/`DictWriter` call across four source files plus every
+  test fixture, and would only narrow the failure window rather than close
+  it, since the drop-and-warn safety net above still has to be the real
+  backstop either way). Added `test_contains_worked_comma_quoting_example`
+  to `tests/test_ai_plan_generator.py`. If malformed rows keep recurring
+  after this, the delimiter change is still on the table as a second line
+  of defense.
+- **The prompt fix alone was not sufficient**: the very next real Adapt Plan
+  run (with the prompt fix already active — confirmed from `app.log`'s
+  request-body dump, which showed the new quoting instruction) still
+  dropped 4 rows. Investigating turned up a separate, more fundamental gap:
+  the raw model response for the sessions call is never persisted anywhere.
+  The Anthropic SDK's DEBUG logging captures outgoing *requests* in full
+  (`json_data`) but never response bodies (`receive_response_body.complete`
+  logs no content) — confirmed by grepping `app.log`. So the 4 dropped rows
+  from that run are unrecoverable; there was no way to know what they were.
+  Fixed the diagnosability gap regardless of the root cause: `logger.warning`
+  in `_splice_past_sessions()` now includes the full raw `generated_csv`
+  text whenever any row is dropped (and a separate warning with just the
+  count if the on-disk *original* CSV had a malformed row, a rarer/defensive
+  case). This is the only place in the codebase the exact malformed text is
+  ever visible — the CSV is parsed into rows and the source text discarded
+  immediately after in the normal path. Added
+  `test_logs_raw_response_when_rows_dropped` asserting the warning contains
+  both the count and the exact malformed row text. Given the prompt fix
+  didn't hold up under real use, the delimiter change (tab, most likely,
+  since it's the least probable character in generated prose) is now a live
+  option rather than a fallback — deferred pending the next real run's log,
+  which will finally show the exact malformed row(s) instead of just a count.
+- **The real culprit, found via the new raw-response logging: silent
+  truncation, not a delimiter/quoting problem at all.** The next real run's
+  `app.log` showed the actual dropped row was the *last line of the entire
+  response*, cut off mid-sentence with no `cooldown`/`description` fields —
+  `"...170 min steady @ Zone 2 (192-257W) with a few short Zone 3"`, then
+  nothing. September wasn't parsed-and-dropped, it was never generated:
+  `adapt_sessions()`'s `client.messages.create()` call had `max_tokens=8192`
+  and nothing checked `stop_reason`, so a response cut off by the token cap
+  midway through Week 2 was silently accepted as if complete. The "1 session
+  dropped" warning was accurate but wildly understated the damage — it
+  only knows about rows it can see, not about the weeks that were never
+  attempted. This is the identical failure class story 0009 already fixed
+  for `adapt_plan()`'s streaming loop (which does check `stop_reason` and
+  raises clearly), just never applied to the plain `.create()` calls. Per
+  explicit user direction, extended the fix to every call site with the
+  same gap rather than just `adapt_sessions()`: added
+  `_raise_if_truncated(stop_reason, what)` to `plan_generator.py` (raises
+  `RuntimeError` on any non-`end_turn` stop) and applied it to
+  `generate_plan()`, `generate_sessions()`, and `adapt_sessions()` — the
+  first two had the identical unchecked pattern and, if anything, a higher
+  truncation risk (an original plan can span far more weeks than what's
+  left to adapt). Bumped `max_tokens` from `8192` to `32768` on all three,
+  matching `adapt_plan()`'s existing loop; since `max_tokens` is a cap on
+  cost, not a floor, this has no cost impact on runs that don't need the
+  headroom. A truncated `adapt_sessions()` response now surfaces through
+  the *existing* `sessions_failed` warning ("previous schedule retained")
+  instead of a misleading partial-row-count — the honest signal for what
+  is, in fact, a full failure of that call. Added
+  `TestRaiseIfTruncated` (`tests/test_ai_plan_generator.py`) and
+  `test_raises_when_response_truncated` (`tests/test_ai_plan_adaptor.py`).
+  On the also-reported "Sweet Spot marked as Recovery" observation: the raw
+  logged response shows `type`/`intensity` correctly say "Sweet Spot
+  Intervals"/"Sweet Spot" — it's the `phase` column that says "Recovery"
+  for that week, reflecting the model's own week-level framing (a deload
+  week that still includes a touch of intensity) rather than a splice/parse
+  defect on the code side; left as-is pending user follow-up on whether
+  it's worth a prompt-level nudge.
+- **The `max_tokens=32768` bump broke every `adapt_sessions()` call
+  outright** on the very next real run: `ValueError: Streaming is required
+  for operations that may take longer than 10 minutes`, raised by the
+  anthropic SDK's `_calculate_nonstreaming_timeout()` before the request
+  was even sent (`3600 * max_tokens / 128_000 > 600` at `max_tokens=32768`).
+  Fixed by switching `generate_plan()`, `generate_sessions()`, and
+  `adapt_sessions()` from `client.messages.create()` to
+  `client.messages.stream() as stream: stream.get_final_message()` — the
+  same pattern `adapt_plan()`'s loop already used, which has no such
+  ceiling and returns an identically-shaped `Message`, so
+  `_raise_if_truncated()`/`_extract_text_content()` needed no changes.
+  Updated `tests/test_ai_plan_adaptor.py`'s fake-client fixtures to drop
+  the now-unused `.create()`/`_FakeCreateResponse` path and exercise
+  `adapt_sessions()` through the same `_FakeResponse`/`.stream()` fakes
+  already used for `adapt_plan()`.
+- Verification: `pytest` (319 passed after all fixes above), `ruff check .`
+  / `ruff format .` (clean), `mypy ./` (clean, 57 files). Manual verification
+  (Sessions table refresh, `sessions_log.json` alignment, `cache_read` in
+  `app.log`, and now also the new failure/incomplete warning dialogs) was
+  deferred to
+  the user running `python main.py --test` themselves, since it requires a
+  real, billed Anthropic API call plus a live intervals.icu sync against
+  their real training data — not run as part of this session.
+- Manual verification: Plan adaption ran on real data executed successfully.
+  Logs show successful use of cache reads.

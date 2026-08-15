@@ -1,6 +1,8 @@
 """Tests for src/ai/plan_adaptor.py — pure helper functions plus adapt_plan() with a fake client."""
 
+import copy
 import json
+import logging
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -9,8 +11,10 @@ import pytest
 from src.ai.plan_adaptor import (
     _build_log_section,
     _build_user_prompt,
+    _splice_past_sessions,
     _extract_text,
     adapt_plan,
+    adapt_sessions,
 )
 from src.data.intervals_api import IntervalsClient
 from src.goals import load_goals
@@ -23,6 +27,11 @@ class _FakeTextBlock:
 
 class _FakeOtherBlock:
     pass
+
+
+class _FakeThinkingBlock:
+    def __init__(self, thinking: str = "reasoning...") -> None:
+        self.thinking = thinking
 
 
 class _FakeUsage:
@@ -55,16 +64,32 @@ class _FakeStream:
 
 
 class _FakeMessages:
-    def __init__(self, response: _FakeResponse) -> None:
+    def __init__(
+        self,
+        response: _FakeResponse | None = None,
+        responses: list[_FakeResponse] | None = None,
+    ) -> None:
         self._response = response
+        self._responses = list(responses) if responses is not None else None
+        self.stream_calls: list[dict] = []
 
     def stream(self, **kwargs: object) -> _FakeStream:
-        return _FakeStream(self._response)
+        # Deep-copy so later in-place mutation of `messages` (moving the cache
+        # breakpoint forward) doesn't retroactively change what earlier calls
+        # appear to have been made with.
+        self.stream_calls.append(copy.deepcopy(kwargs))
+        resp = self._responses.pop(0) if self._responses is not None else self._response
+        assert resp is not None
+        return _FakeStream(resp)
 
 
 class _FakeClient:
-    def __init__(self, response: _FakeResponse) -> None:
-        self.messages = _FakeMessages(response)
+    def __init__(
+        self,
+        response: _FakeResponse | None = None,
+        responses: list[_FakeResponse] | None = None,
+    ) -> None:
+        self.messages = _FakeMessages(response=response, responses=responses)
 
 
 @pytest.fixture
@@ -290,3 +315,286 @@ class TestAdaptPlanTruncatedResponse:
             with pytest.raises(RuntimeError):
                 adapt_plan(activity_client)
         assert adapted_path.read_text() == "PREVIOUS ADAPTED PLAN"
+
+
+class _FakeToolUseBlock:
+    def __init__(self, tool_use_id: str = "tool1") -> None:
+        self.type = "tool_use"
+        self.id = tool_use_id
+        self.name = "list_recent_activities"
+        self.input: dict = {}
+
+
+_SESSIONS_HEADER = (
+    "date,week,phase,type,duration_min,intensity,target_power_pct_ftp,"
+    "warmup,main_set,cooldown,description"
+)
+
+
+def _session_row(date: str, type_: str) -> str:
+    return f"{date},1,Base,{type_},60,Zone 2,56-75%,warmup,main set,cooldown,desc"
+
+
+class TestSplicePastSessions:
+    def test_keeps_original_past_row_ignores_generated_rewrite(
+        self, tmp_path: Path
+    ) -> None:
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        generated = "\n".join(
+            [
+                _SESSIONS_HEADER,
+                _session_row("2000-01-01", "Model Rewrote Past"),
+                _session_row("2999-01-01", "Model Future"),
+            ]
+        )
+        with patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path):
+            result, dropped = _splice_past_sessions(generated)
+        assert "Original Past" in result
+        assert "Model Rewrote Past" not in result
+        assert "Model Future" in result
+        assert dropped == 0
+
+    def test_drops_row_with_extra_trailing_columns(self, tmp_path: Path) -> None:
+        # Regression: an unescaped comma in a free-text field (e.g.
+        # description) gives DictReader a row with more values than
+        # headers; the overflow used to land under a `None` key that
+        # crashed DictWriter with "dict contains fields not in fieldnames".
+        # Now the malformed row is dropped rather than written at all.
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        malformed_future_row = (
+            _session_row("2999-01-01", "Generated Future") + ",unexpected,overflow"
+        )
+        generated = "\n".join([_SESSIONS_HEADER, malformed_future_row])
+        with patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path):
+            result, dropped = _splice_past_sessions(generated)
+        assert "Original Past" in result
+        assert "Generated Future" not in result
+        assert dropped == 1
+
+    def test_logs_raw_response_when_rows_dropped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # The raw model response isn't persisted anywhere else, so the
+        # dropped-row warning must carry the exact original text — this is
+        # the only place it can be recovered from for diagnosis.
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        malformed_future_row = (
+            _session_row("2999-01-01", "Generated Future") + ",unexpected,overflow"
+        )
+        generated = "\n".join([_SESSIONS_HEADER, malformed_future_row])
+        with patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path):
+            with caplog.at_level(logging.WARNING):
+                _splice_past_sessions(generated)
+        assert "dropped 1 malformed row" in caplog.text
+        assert malformed_future_row in caplog.text
+
+    def test_drops_row_with_comma_shifted_fields_instead_of_corrupting(
+        self, tmp_path: Path
+    ) -> None:
+        # An unescaped comma *before* the last column shifts every field
+        # after it (e.g. real cooldown/description text ends up in the
+        # overflow while cooldown/description hold the wrong values). Such
+        # a row must be dropped, not written with misassigned data.
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        shifted_row = (
+            "2999-01-01,1,Base,Threshold,60,Zone 4,91-105%,warmup,"
+            "3x10 min, hard, main set,10 min cooldown,desc text"
+        )
+        generated = "\n".join([_SESSIONS_HEADER, shifted_row])
+        with patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path):
+            result, dropped = _splice_past_sessions(generated)
+        assert "Original Past" in result
+        assert " hard" not in result  # would appear in a misassigned cooldown
+        assert dropped == 1
+
+    def test_falls_back_to_generated_when_no_original(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        generated = "\n".join(
+            [_SESSIONS_HEADER, _session_row("2999-01-01", "Only Future")]
+        )
+        with patch(
+            "src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", tmp_path / "missing.csv"
+        ):
+            with caplog.at_level(logging.WARNING):
+                result, dropped = _splice_past_sessions(generated)
+        assert result == generated
+        assert dropped == 0
+        assert "no usable original" in caplog.text
+
+    def test_returns_generated_unchanged_when_unparseable(self, tmp_path: Path) -> None:
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        with patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path):
+            result, dropped = _splice_past_sessions("")
+        assert result == ""
+        assert dropped == 0
+
+
+class TestAdaptSessions:
+    def test_writes_spliced_csv_to_adapted_path(self, tmp_path: Path) -> None:
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        adapted_path = tmp_path / "sessions_adapted.csv"
+        generated_csv = "\n".join(
+            [_SESSIONS_HEADER, _session_row("2999-01-01", "Generated Future")]
+        )
+        response = _FakeResponse("end_turn", [_FakeTextBlock(generated_csv)])
+        with (
+            patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path),
+            patch("src.ai.plan_adaptor.SESSIONS_ADAPTED_PATH", adapted_path),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
+            patch(
+                "src.ai.plan_adaptor.get_client",
+                return_value=_FakeClient(response=response),
+            ),
+        ):
+            result, dropped = adapt_sessions("adapted plan text")
+        assert "Original Past" in result
+        assert "Generated Future" in result
+        assert adapted_path.read_text() == result
+        assert dropped == 0
+
+    def test_reports_dropped_row_count(self, tmp_path: Path) -> None:
+        original_path = tmp_path / "sessions_original.csv"
+        original_path.write_text(
+            "\n".join([_SESSIONS_HEADER, _session_row("2000-01-01", "Original Past")])
+        )
+        adapted_path = tmp_path / "sessions_adapted.csv"
+        malformed_row = (
+            _session_row("2999-01-01", "Generated Future") + ",unexpected,overflow"
+        )
+        generated_csv = "\n".join([_SESSIONS_HEADER, malformed_row])
+        response = _FakeResponse("end_turn", [_FakeTextBlock(generated_csv)])
+        with (
+            patch("src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", original_path),
+            patch("src.ai.plan_adaptor.SESSIONS_ADAPTED_PATH", adapted_path),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
+            patch(
+                "src.ai.plan_adaptor.get_client",
+                return_value=_FakeClient(response=response),
+            ),
+        ):
+            result, dropped = adapt_sessions("adapted plan text")
+        assert "Original Past" in result
+        assert "Generated Future" not in result
+        assert dropped == 1
+
+    def test_survives_leading_thinking_block(self, tmp_path: Path) -> None:
+        # Regression: a leading ThinkingBlock ahead of the CSV text block
+        # previously crashed adapt_sessions() with an AttributeError,
+        # silently leaving SESSIONS_ADAPTED_PATH unwritten.
+        adapted_path = tmp_path / "sessions_adapted.csv"
+        generated_csv = "\n".join(
+            [_SESSIONS_HEADER, _session_row("2999-01-01", "Generated Future")]
+        )
+        response = _FakeResponse(
+            "end_turn", [_FakeThinkingBlock(), _FakeTextBlock(generated_csv)]
+        )
+        with (
+            patch(
+                "src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", tmp_path / "missing.csv"
+            ),
+            patch("src.ai.plan_adaptor.SESSIONS_ADAPTED_PATH", adapted_path),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
+            patch(
+                "src.ai.plan_adaptor.get_client",
+                return_value=_FakeClient(response=response),
+            ),
+        ):
+            result, dropped = adapt_sessions("adapted plan text")
+        assert "Generated Future" in result
+        assert adapted_path.read_text() == result
+        assert dropped == 0
+
+    def test_raises_when_response_truncated(self, tmp_path: Path) -> None:
+        # Regression: a real run hit max_tokens partway through a multi-week
+        # session list — the response wasn't just missing a row, it was
+        # missing entire weeks that were never generated at all. Without a
+        # stop_reason check, that silently shipped as a "1 row dropped"
+        # warning instead of the loud failure this actually is.
+        partial_csv = "\n".join(
+            [_SESSIONS_HEADER, _session_row("2026-08-18", "Sweet Spot Intervals")]
+        )
+        response = _FakeResponse("max_tokens", [_FakeTextBlock(partial_csv)])
+        with (
+            patch(
+                "src.ai.plan_adaptor.SESSIONS_ORIGINAL_PATH", tmp_path / "missing.csv"
+            ),
+            patch(
+                "src.ai.plan_adaptor.SESSIONS_ADAPTED_PATH", tmp_path / "adapted.csv"
+            ),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
+            patch(
+                "src.ai.plan_adaptor.get_client",
+                return_value=_FakeClient(response=response),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="max_tokens"):
+                adapt_sessions("adapted plan text")
+        assert not (tmp_path / "adapted.csv").exists()
+
+
+class TestAdaptPlanCaching:
+    def _run_two_turns(self, tmp_path: Path) -> _FakeMessages:
+        original = tmp_path / "plan_original.md"
+        original.write_text("Original plan text")
+        tool_use_response = _FakeResponse("tool_use", [_FakeToolUseBlock()])
+        end_turn_response = _FakeResponse(
+            "end_turn", [_FakeTextBlock("Adapted plan body")]
+        )
+        client = _FakeClient(responses=[tool_use_response, end_turn_response])
+        tool_result = [{"type": "tool_result", "tool_use_id": "tool1", "content": "ok"}]
+        with (
+            patch("src.ai.plan_adaptor.PLAN_ORIGINAL_PATH", original),
+            patch(
+                "src.ai.plan_adaptor.PLAN_ADAPTED_PATH", tmp_path / "plan_adapted.md"
+            ),
+            patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
+            patch("src.ai.plan_adaptor.get_client", return_value=client),
+            patch("src.ai.plan_adaptor.execute_tools", return_value=tool_result),
+        ):
+            adapt_plan(Mock())
+        return client.messages
+
+    def test_system_prompt_carries_cache_control(self, tmp_path: Path) -> None:
+        messages = self._run_two_turns(tmp_path)
+        system = messages.stream_calls[0]["system"]
+        assert system[-1]["cache_control"] == {"type": "ephemeral"}
+
+    def test_breakpoint_moves_forward_across_turns(self, tmp_path: Path) -> None:
+        messages = self._run_two_turns(tmp_path)
+        first_call_messages = messages.stream_calls[0]["messages"]
+        second_call_messages = messages.stream_calls[1]["messages"]
+
+        assert first_call_messages[-1]["content"][-1]["cache_control"] == {
+            "type": "ephemeral"
+        }
+        # The initial user message's breakpoint has been stripped by turn 2,
+        # and the newly-appended tool-result message carries it instead.
+        assert "cache_control" not in second_call_messages[0]["content"][-1]
+        assert second_call_messages[-1]["content"][-1]["cache_control"] == {
+            "type": "ephemeral"
+        }

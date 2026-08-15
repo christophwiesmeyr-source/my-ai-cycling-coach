@@ -1,9 +1,5 @@
 """Training plan generator — plan narrative and structured session list"""
 
-from typing import cast
-
-from anthropic.types import TextBlock
-
 from src.constants import (
     APP_DIR,
     PLAN_ORIGINAL_PATH,
@@ -17,6 +13,26 @@ from src.goals import format_goals_table
 from .client import get_client
 
 
+def _extract_text_content(content: list) -> str:
+    # The response's first block isn't always text — a model may emit a
+    # ThinkingBlock (or other non-text block) ahead of it, so scan for text
+    # blocks by attribute rather than assuming content[0].
+    return "\n".join(block.text for block in content if hasattr(block, "text"))
+
+
+def _raise_if_truncated(stop_reason: str | None, what: str) -> None:
+    # A single-shot create() call has no equivalent to adapt_plan()'s
+    # tool-use loop, where hitting max_tokens is caught via stop_reason —
+    # here it's the only signal that the response was cut off mid-output
+    # (e.g. missing an entire tail of weeks from a session list) rather than
+    # genuinely finished.
+    if stop_reason != "end_turn":
+        raise RuntimeError(
+            f"{what} stopped unexpectedly (stop_reason={stop_reason!r}); "
+            "this usually means the response was truncated — try again."
+        )
+
+
 def clear_derived_plan_data() -> None:
     # The adapted plan, its session list, and the completion log are all keyed
     # to the old plan's dates, so they're meaningless once a new plan replaces it.
@@ -28,40 +44,50 @@ def generate_plan(goals: dict) -> str:
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
-    message = client.messages.create(
+    # A non-streaming create() call refuses to run if max_tokens implies more
+    # than ~10 minutes of generation time (anthropic SDK's built-in guard) —
+    # stream() has no such ceiling, so it's required at this max_tokens size.
+    with client.messages.stream(
         model=AI_MODEL,
-        max_tokens=8192,
+        max_tokens=32768,
         system=(
             "You are an expert cycling coach. Create detailed, structured training plans "
             "that are realistic, evidence-based, and tailored to the athlete's goals and "
             "current fitness. Always include reasoning for your session choices."
         ),
         messages=[{"role": "user", "content": _build_plan_prompt(goals)}],
-    )
+    ) as stream:
+        message = stream.get_final_message()
+    _raise_if_truncated(message.stop_reason, "Plan generation")
 
-    plan = cast(TextBlock, message.content[0]).text
+    plan = _extract_text_content(message.content)
     full_plan = _build_plan_header(goals) + "\n\n" + plan
     PLAN_ORIGINAL_PATH.write_text(full_plan)
     return full_plan
+
+
+_SESSIONS_SYSTEM = (
+    "You are a cycling coach assistant that converts training plans into structured "
+    "session data. Output only clean CSV — no prose, no markdown fences."
+)
 
 
 def generate_sessions(plan_text: str, goals: dict) -> str:
     APP_DIR.mkdir(parents=True, exist_ok=True)
 
     client = get_client()
-    message = client.messages.create(
+    with client.messages.stream(
         model=AI_MODEL,
-        max_tokens=8192,
-        system=(
-            "You are a cycling coach assistant that converts training plans into structured "
-            "session data. Output only clean CSV — no prose, no markdown fences."
-        ),
+        max_tokens=32768,
+        system=_SESSIONS_SYSTEM,
         messages=[
             {"role": "user", "content": _build_sessions_prompt(plan_text, goals)}
         ],
-    )
+    ) as stream:
+        message = stream.get_final_message()
+    _raise_if_truncated(message.stop_reason, "Session list generation")
 
-    raw = cast(TextBlock, message.content[0]).text.strip()
+    raw = _extract_text_content(message.content).strip()
     csv_text = _extract_csv(raw)
     SESSIONS_ORIGINAL_PATH.write_text(csv_text)
     return csv_text
@@ -152,7 +178,12 @@ def _build_sessions_prompt(plan_text: str, goals: dict) -> str:
   - description: one concise sentence on the purpose and expected adaptation of this session
 - Include every training session — typically 2–6 per week
 - Do not include rest days
-- Do not wrap any field in quotes unless the field itself contains a comma"""
+- Do not wrap a field in quotes unless it contains a comma — but if a field
+  (e.g. main_set or description) does contain a comma, you MUST wrap that
+  field in double quotes, or the row breaks. For example, if main_set is
+  "3 x 20 min @ 76-90% FTP, then 10 min @ Zone 1 recovery", write it as:
+  2026-10-03,7,Race,Long Ride,300,Zone 2,56-75%,15 min @ Zone 1-2 easy spinning,"3 x 20 min @ 76-90% FTP, then 10 min @ Zone 1 recovery",10 min @ Zone 1 easy spinning,"Builds durability, especially in the final third of the ride"
+"""
 
 
 def _extract_csv(raw: str) -> str:

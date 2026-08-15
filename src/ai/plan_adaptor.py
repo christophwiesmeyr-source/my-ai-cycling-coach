@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import logging
 from typing import Any
 
 from src.constants import (
@@ -15,6 +16,8 @@ from src.constants import (
 from src.data.intervals_api import IntervalsClient
 from .client import get_client
 from .tools import TOOLS, execute_tools
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "You are an expert cycling coach. You will analyse a training plan against the athlete's "
@@ -87,12 +90,24 @@ def adapt_plan(activity_client: IntervalsClient) -> str:
     messages: list[Any] = [{"role": "user", "content": prompt}]
 
     while True:
-        response = client.messages.create(
+        with client.messages.stream(
             model=AI_MODEL,
-            max_tokens=4096,
+            max_tokens=32768,
             system=_SYSTEM,
             tools=TOOLS,
             messages=messages,
+        ) as stream:
+            response = stream.get_final_message()
+
+        usage = response.usage
+        logger.info(
+            "plan adaptation turn stop_reason=%s input_tokens=%s output_tokens=%s "
+            "cache_creation=%s cache_read=%s",
+            response.stop_reason,
+            usage.input_tokens,
+            usage.output_tokens,
+            getattr(usage, "cache_creation_input_tokens", None),
+            getattr(usage, "cache_read_input_tokens", None),
         )
 
         if response.stop_reason == "end_turn":
@@ -111,7 +126,11 @@ def adapt_plan(activity_client: IntervalsClient) -> str:
             )
             continue
 
-        return _extract_text(response.content)
+        raise RuntimeError(
+            f"Plan adaptation stopped unexpectedly (stop_reason={response.stop_reason!r}); "
+            "no adapted plan was saved. This usually means the response was truncated — "
+            "try again."
+        )
 
 
 def _extract_text(content: list) -> str:

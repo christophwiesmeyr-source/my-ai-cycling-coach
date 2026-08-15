@@ -59,6 +59,7 @@ class PlanAdaptorWorker(QThread):
             plan = adapt_plan(self.activity_client)
             self.finished.emit(plan)
         except Exception as exc:
+            logger.exception("plan adaptor failed")
             self.error_occurred.emit(str(exc))
 
 

@@ -2,12 +2,18 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
-from src.ai.plan_adaptor import _build_log_section, _extract_text, adapt_plan
+from src.ai.plan_adaptor import (
+    _build_log_section,
+    _build_user_prompt,
+    _extract_text,
+    adapt_plan,
+)
 from src.data.intervals_api import IntervalsClient
+from src.goals import load_goals
 
 
 class _FakeTextBlock:
@@ -138,23 +144,94 @@ class TestBuildLogSection:
         assert result.index("2025-04-01") < result.index("2025-04-03")
 
 
-class TestAdaptPlanWritesAdaptedFile:
-    def test_end_turn_writes_and_returns_adapted_plan(
-        self, tmp_path: Path, activity_client: IntervalsClient
+class TestBuildUserPrompt:
+    _ORIGINAL_PLAN_WITH_STALE_FTP = (
+        "## Plan parameters\n\n| Parameter | Value |\n|-----------|-------|\n"
+        "| FTP | 325 W |\n\n---\n\nWeek 1: Base training..."
+    )
+
+    def test_live_goals_reach_prompt_alongside_stale_original(
+        self, tmp_path: Path
     ) -> None:
+        goals_file = tmp_path / "goals.json"
+        goals_file.write_text(json.dumps({"current_ftp_watts": 343}))
+        with (
+            patch("src.goals.GOALS_PATH", goals_file),
+            patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+        ):
+            goals = load_goals()
+            prompt = _build_user_prompt(
+                original_plan=self._ORIGINAL_PLAN_WITH_STALE_FTP,
+                today="2026-08-15",
+                goals=goals,
+            )
+        assert "325 W" in prompt  # historical value from the original plan retained
+        assert "343 W" in prompt  # live value reaches the model text
+        assert "Current athlete profile (live)" in prompt
+
+    def test_authoritative_wording_present_when_profile_included(
+        self, tmp_path: Path
+    ) -> None:
+        with patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"):
+            prompt = _build_user_prompt(
+                original_plan="plan text",
+                today="2026-08-15",
+                goals={"main_goal": "Race"},
+            )
+        assert "authoritative" in prompt
+
+    def test_empty_goals_omit_profile_section(self, tmp_path: Path) -> None:
+        # The section itself (the rendered table) is omitted; the surrounding
+        # conditional instruction ("if a section appears above...") still stands
+        # since it's static prompt text, not part of format_goals_table's output.
+        with patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"):
+            prompt = _build_user_prompt(
+                original_plan="plan text", today="2026-08-15", goals={}
+            )
+        assert "## Current athlete profile (live)" not in prompt
+
+    def test_today_and_original_plan_included(self, tmp_path: Path) -> None:
+        with patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"):
+            prompt = _build_user_prompt(
+                original_plan="my special plan text",
+                today="2026-08-15",
+                goals={},
+            )
+        assert "2026-08-15" in prompt
+        assert "my special plan text" in prompt
+
+
+class TestAdaptPlanWritesAdaptedFile:
+    def _run(self, tmp_path: Path, goals_path: Path) -> tuple[str, Path]:
         original = tmp_path / "plan_original.md"
-        original.write_text("# Original Plan")
+        original.write_text("Original plan text")
         adapted_path = tmp_path / "plan_adapted.md"
-        response = _FakeResponse("end_turn", [_FakeTextBlock("# Adapted Plan")])
+
+        response = _FakeResponse("end_turn", [_FakeTextBlock("Adapted plan body")])
         with (
             patch("src.ai.plan_adaptor.PLAN_ORIGINAL_PATH", original),
             patch("src.ai.plan_adaptor.PLAN_ADAPTED_PATH", adapted_path),
             patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.ai.plan_adaptor.APP_DIR", tmp_path),
+            patch("src.goals.GOALS_PATH", goals_path),
             patch("src.ai.plan_adaptor.get_client", return_value=_FakeClient(response)),
         ):
-            result = adapt_plan(activity_client)
-        assert result == "# Adapted Plan"
-        assert adapted_path.read_text() == "# Adapted Plan"
+            result = adapt_plan(Mock())
+        return result, adapted_path
+
+    def test_prepends_header_when_goals_present(self, tmp_path: Path) -> None:
+        goals_path = tmp_path / "goals.json"
+        goals_path.write_text(json.dumps({"current_ftp_watts": 343}))
+        result, adapted_path = self._run(tmp_path, goals_path)
+        assert result.startswith("## Plan parameters (at adaptation)")
+        assert "343 W" in result
+        assert adapted_path.read_text() == result
+
+    def test_no_header_when_goals_missing(self, tmp_path: Path) -> None:
+        result, adapted_path = self._run(tmp_path, tmp_path / "missing.json")
+        assert result == "Adapted plan body"
+        assert "Plan parameters (at adaptation)" not in result
+        assert adapted_path.read_text() == result
 
 
 class TestAdaptPlanTruncatedResponse:
@@ -169,6 +246,7 @@ class TestAdaptPlanTruncatedResponse:
             patch("src.ai.plan_adaptor.PLAN_ORIGINAL_PATH", original),
             patch("src.ai.plan_adaptor.PLAN_ADAPTED_PATH", adapted_path),
             patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
             patch("src.ai.plan_adaptor.get_client", return_value=_FakeClient(response)),
         ):
             with pytest.raises(RuntimeError):
@@ -187,6 +265,7 @@ class TestAdaptPlanTruncatedResponse:
                 "src.ai.plan_adaptor.PLAN_ADAPTED_PATH", tmp_path / "plan_adapted.md"
             ),
             patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
             patch("src.ai.plan_adaptor.get_client", return_value=_FakeClient(response)),
         ):
             with pytest.raises(RuntimeError, match="max_tokens") as exc_info:
@@ -205,6 +284,7 @@ class TestAdaptPlanTruncatedResponse:
             patch("src.ai.plan_adaptor.PLAN_ORIGINAL_PATH", original),
             patch("src.ai.plan_adaptor.PLAN_ADAPTED_PATH", adapted_path),
             patch("src.ai.plan_adaptor.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing.json"),
             patch("src.ai.plan_adaptor.get_client", return_value=_FakeClient(response)),
         ):
             with pytest.raises(RuntimeError):

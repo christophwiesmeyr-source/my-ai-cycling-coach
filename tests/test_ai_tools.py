@@ -402,14 +402,14 @@ class TestGetActivityTrainingLoad:
     def test_no_power_returns_message(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=100, power=None)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "goals.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "goals.json"):
             result = _get_activity_training_load(client, "42")
         assert "needs power" in result
 
     def test_core_metrics_without_goals(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=200.0)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_training_load(client, "42")
         assert "Normalized Power: 200 W" in result  # constant power → NP == avg
         assert "Variability Index: 1.00" in result
@@ -422,7 +422,7 @@ class TestGetActivityTrainingLoad:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=3600, power=250.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_training_load(client, "42")
         assert "Intensity Factor: 1.00 (FTP 250 W)" in result
         # 1 h at FTP → ~100 TSS
@@ -433,7 +433,7 @@ class TestGetActivityTrainingLoad:
         goals.write_text(json.dumps({"weight_kg": 70}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=210.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_training_load(client, "42")
         assert "3.00 W/kg" in result
 
@@ -442,7 +442,7 @@ class TestGetActivityTrainingLoad:
         client.download_activity.return_value = _real_activity(
             n=600, power=200.0, heart_rate=160.0
         )
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_training_load(client, "42")
         assert "Efficiency Factor: 1.25 W/beat" in result
 
@@ -510,7 +510,7 @@ class TestGetActivityIntervals:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = self._activity_with_block(hr_drift=True)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "1 structured work interval" in result
         assert "Interval 1:" in result
@@ -535,7 +535,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         lines = {
             line.split(":")[0].strip(): line
@@ -557,7 +557,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "Interval 1:" in result
         assert "HRR60" not in result
@@ -574,7 +574,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "Interval 1:" in result
         assert "HRR60" not in result
@@ -584,21 +584,21 @@ class TestGetActivityIntervals:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=100.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "No structured work intervals" in result
 
     def test_no_power_returns_message(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=300, power=None)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_intervals(client, "42")
         assert "No power data" in result
 
     def test_no_ftp_omits_percent(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = self._activity_with_block()
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_intervals(client, "42")
         assert "no FTP set" in result
         assert "% FTP)" not in result

@@ -1,6 +1,6 @@
 ---
 title: Sync AI coach context with live training goals
-status: ready
+status: done
 release: v4
 ---
 
@@ -44,29 +44,29 @@ duplicate of this story.
 
 ## Acceptance Criteria
 
-- [ ] `src/goals.py` exposes a public `load_goals() -> dict` that reads
+- [x] `src/goals.py` exposes a public `load_goals() -> dict` that reads
       `GOALS_PATH`, returning `{}` on a missing file or invalid JSON.
-- [ ] `src/goals.py` exposes a `format_goals_table(goals: dict, title: str) -> str`,
+- [x] `src/goals.py` exposes a `format_goals_table(goals: dict, title: str) -> str`,
       extracted from `plan_generator._build_plan_header`'s table-rendering
       logic, returning `""` when `goals` is empty.
-- [ ] `tools.py`'s private `_load_goals()` is removed in favour of
+- [x] `tools.py`'s private `_load_goals()` is removed in favour of
       `src.goals.load_goals()`, so goal-loading logic exists in exactly one
       place.
-- [ ] `plan_adaptor.adapt_plan()`'s prompt includes a "Current athlete
+- [x] `plan_adaptor.adapt_plan()`'s prompt includes a "Current athlete
       profile" section built fresh from `load_goals()` at adaptation time
       (not from the original plan's baked-in snapshot), with explicit
       wording that this live section is authoritative over the original
       plan's "Plan parameters" table where the two disagree (e.g. FTP).
-- [ ] The adapted plan written to `PLAN_ADAPTED_PATH` has a "Plan
+- [x] The adapted plan written to `PLAN_ADAPTED_PATH` has a "Plan
       parameters (at adaptation)" table prepended, built from the same
       live `goals.json` snapshot used in the prompt — so the Training tab
       shows the FTP/hours/etc. that were actually used for the adaptation.
       Skipped (no prepend) when `load_goals()` returns `{}`.
-- [ ] `chat_session.ChatSession.build_system()` includes the same live
+- [x] `chat_session.ChatSession.build_system()` includes the same live
       "Current athlete profile" section, placed in the volatile (uncached)
       block and read fresh on every call — a goal edited mid-session is
       visible on the next message with no reload/restart needed.
-- [ ] Missing/empty/unparseable `goals.json` degrades gracefully at all
+- [x] Missing/empty/unparseable `goals.json` degrades gracefully at all
       three call sites: no crash, section/prepend simply omitted.
 
 ## Technical Decisions
@@ -153,6 +153,88 @@ duplicate of this story.
 
 ## Implementation Notes
 
-<!-- Filled in during/after implementation, not during drafting. What was
-     actually built, especially where it deviates from Technical
-     Decisions and why, plus any concrete results worth recording. -->
+Built as specified in Technical Decisions, with two deliberate deviations:
+
+- **`tools.py` scope narrowed to what the AC actually names.** Only the private
+  `_load_goals()` function was removed and routed through `src.goals.load_goals()`
+  (its two call sites: `_get_activity_training_load`, `_get_activity_intervals`).
+  `_get_activity_zones` has its own separate, pre-existing inline
+  `json.loads(GOALS_PATH.read_text())` that was *not* touched — it isn't
+  `_load_goals()`, and its `except Exception` branch produces a distinct,
+  test-verified message ("Training goals not available…") for an unreadable
+  file versus "Neither FTP nor max heart rate is set…" for a valid-but-empty
+  one. `load_goals()` collapses both cases to `{}`, so routing this call site
+  through it too would have silently changed that message. Judged the AC's
+  precise wording ("`_load_goals()` is removed") as intentionally scoped to
+  just that function, not a mandate to touch every direct `GOALS_PATH` read in
+  the file.
+- **`_build_plan_header({})` now returns `""` instead of a header-with-no-rows
+  table.** `format_goals_table`'s AC-mandated contract is to return `""` for
+  empty goals (AC #2), and `_build_plan_header` is now a one-line delegate to
+  it, so this edge case's output changed. Updated the one existing test
+  (`test_ai_plan_generator.py::TestBuildPlanHeader`) that asserted the old
+  behavior; this path is never hit in practice since the Training Goals form
+  always sets `main_goal` before `generate_plan()` is called.
+
+Everything else matches the story as written: `src/goals.py` gained
+`load_goals()`/`format_goals_table()`; `plan_adaptor._build_user_prompt()` is a
+new pure helper taking `(original_plan, today, goals)`, with `_USER_PROMPT`'s
+`{current_profile_section}` slot placed after `{original_plan}` and before
+`{log_section}`, plus wording telling the model to prefer live values over the
+original plan's baked-in table; `adapt_plan()` loads goals once and reuses that
+same snapshot for both the prompt and the `PLAN_ADAPTED_PATH` prepend (skipped
+when empty), mirroring `generate_plan()`'s return-what-was-written pattern;
+`chat_session.build_system()` calls `load_goals()` fresh on every call and
+appends the profile section after the session-table block, in the volatile
+(uncached) part.
+
+**Necessary test-isolation fixes (not explicitly in the Test Plan, but required
+to keep the suite deterministic):** since `load_goals()` resolves `GOALS_PATH`
+from `src.goals`'s own module globals, tests exercising code paths that now go
+through it must patch `src.goals.GOALS_PATH`, not the caller module's name.
+Updated: the `_get_activity_training_load`/`_get_activity_intervals` patches in
+`test_ai_tools.py` (12 occurrences), and all of `TestBuildSystem` in
+`test_ai_chat_session.py`, which previously never patched goals at all — before
+this story, `build_system()` didn't touch `goals.json`, so those tests were
+silently safe; now that it does, leaving them unpatched would have made them
+read the developer's real `~/.my-ai-cycling-coach/goals.json` (confirmed
+non-empty per this story's Problem/Context) on every run.
+
+**Files touched:** `src/goals.py`, `src/ai/plan_generator.py`,
+`src/ai/tools.py`, `src/ai/plan_adaptor.py`, `src/ai/chat_session.py`,
+`tests/test_goals.py` (new), `tests/test_ai_plan_generator.py`,
+`tests/test_ai_tools.py`, `tests/test_ai_plan_adaptor.py`,
+`tests/test_ai_chat_session.py`.
+
+**Test Plan verification:**
+
+- `load_goals()` unit tests — verified (`tests/test_goals.py::TestLoadGoals`).
+- `format_goals_table()` unit tests — verified
+  (`tests/test_goals.py::TestFormatGoalsTable`).
+- `_build_user_prompt()` unit tests — verified
+  (`tests/test_ai_plan_adaptor.py::TestBuildUserPrompt`): a patched-in FTP of
+  343 and the original plan's baked-in FTP of 325 both appear in the built
+  prompt.
+- `PLAN_ADAPTED_PATH` content unit tests — verified
+  (`tests/test_ai_plan_adaptor.py::TestAdaptPlanWritesAdaptedFile`, mocked
+  Anthropic client): saved file starts with the "Plan parameters (at
+  adaptation)" table when goals are present, has no such table when
+  goals.json is empty/missing.
+- `build_system()` live-goals unit tests — verified
+  (`tests/test_ai_chat_session.py::TestBuildSystemLiveGoals`): section present
+  with patched-goals values, section is in the uncached trailing block, and
+  editing `GOALS_PATH` between two `build_system()` calls on the same session
+  (no `reload_plans()`) changes the second call's output.
+- Manual end-to-end verification (generate plan → edit FTP in Training Goals
+  form → Adapt Plan → ask chat coach for current FTP) — **NOT independently
+  verified live.** This environment has no display and no configured
+  Anthropic/intervals.icu credentials to run the real Qt app. Verified by
+  tracing the code path instead: `training_tab.py`'s autosave writes the new
+  FTP to `goals.json` unchanged (out of scope); `PlanAdaptorWorker.run()` calls
+  the now-updated `adapt_plan()`, which reads that file fresh via
+  `load_goals()` and both feeds it into the prompt and prepends it to the
+  adapted plan text rendered in the "Adapted" tab; `ChatWorker.run()` calls
+  `session.build_system()` fresh on every send (not cached), so the coach's
+  system prompt picks up the new FTP on the very next message with no reload
+  or restart. This traces correctly against the implementation but has not
+  been exercised against the live Anthropic API or a real Qt session.

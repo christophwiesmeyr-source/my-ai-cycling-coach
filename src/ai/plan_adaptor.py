@@ -14,6 +14,7 @@ from src.constants import (
     SESSIONS_LOG_PATH,
 )
 from src.data.intervals_api import IntervalsClient
+from src.goals import format_goals_table, load_goals
 from .client import get_client
 from .tools import TOOLS, execute_tools
 
@@ -32,6 +33,11 @@ Today's date is {today}. Use this as your reference for past vs future.
 Here is the original training plan:
 
 {original_plan}
+
+{current_profile_section}
+If a "Current athlete profile (live)" section appears above, treat its values as authoritative \
+over the original plan's "Plan parameters" table where the two disagree (e.g. FTP) — the plan's \
+table is a snapshot from when the plan was generated and may be stale.
 
 {log_section}
 Please:
@@ -72,6 +78,18 @@ def _build_log_section() -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _build_user_prompt(original_plan: str, today: str, goals: dict) -> str:
+    return _USER_PROMPT.format(
+        today=today,
+        original_plan=original_plan,
+        current_profile_section=format_goals_table(
+            goals, "Current athlete profile (live)"
+        ),
+        log_section=_build_log_section(),
+        weeks=ACTIVITY_HISTORY_WEEKS,
+    )
+
+
 def adapt_plan(activity_client: IntervalsClient) -> str:
     if not PLAN_ORIGINAL_PATH.exists():
         raise FileNotFoundError(
@@ -80,13 +98,9 @@ def adapt_plan(activity_client: IntervalsClient) -> str:
 
     original_plan = PLAN_ORIGINAL_PATH.read_text()
     today = datetime.date.today().isoformat()
+    current_goals = load_goals()
     client = get_client()
-    prompt = _USER_PROMPT.format(
-        today=today,
-        original_plan=original_plan,
-        log_section=_build_log_section(),
-        weeks=ACTIVITY_HISTORY_WEEKS,
-    )
+    prompt = _build_user_prompt(original_plan, today, current_goals)
     messages: list[Any] = [{"role": "user", "content": prompt}]
 
     while True:
@@ -112,9 +126,13 @@ def adapt_plan(activity_client: IntervalsClient) -> str:
 
         if response.stop_reason == "end_turn":
             adapted = _extract_text(response.content)
+            header = format_goals_table(
+                current_goals, "Plan parameters (at adaptation)"
+            )
+            full_adapted = f"{header}\n\n{adapted}" if header else adapted
             APP_DIR.mkdir(parents=True, exist_ok=True)
-            PLAN_ADAPTED_PATH.write_text(adapted)
-            return adapted
+            PLAN_ADAPTED_PATH.write_text(full_adapted)
+            return full_adapted
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})

@@ -13,7 +13,7 @@ from src.constants import (
     SESSIONS_ADAPTED_PATH,
     SESSIONS_LOG_PATH,
 )
-from src.goals import GOAL_FIELDS
+from src.goals import format_goals_table
 from .client import get_client
 
 
@@ -73,22 +73,7 @@ def generate_sessions(plan_text: str, goals: dict) -> str:
 
 
 def _build_plan_header(goals: dict) -> str:
-    rows = []
-    for gm in GOAL_FIELDS:
-        v = goals.get(gm.key)
-        if v:
-            rows.append((gm.label, gm.format_value(v)))
-        # insert computed event fields directly after event_name
-        if gm.key == "event_name":
-            if goals.get("event_date"):
-                rows.append(("Event date", goals["event_date"]))
-            if goals.get("weeks_until_event"):
-                rows.append(("Weeks to event", str(goals["weeks_until_event"])))
-    if goals.get("current_date"):
-        rows.append(("Generated on", goals["current_date"]))
-
-    table_rows = "\n".join(f"| {k} | {v} |" for k, v in rows)
-    return f"## Plan parameters\n\n| Parameter | Value |\n|-----------|-------|\n{table_rows}\n\n---"
+    return format_goals_table(goals, "Plan parameters")
 
 
 def _build_plan_prompt(goals: dict) -> str:

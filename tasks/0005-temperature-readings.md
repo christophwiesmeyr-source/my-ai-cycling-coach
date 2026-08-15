@@ -147,3 +147,7 @@ New tests: `test_temperature_range_shown_when_values_vary` and
 `test_temperature_range_omitted_when_constant` in
 `tests/test_ai_tools.py`. Full check suite re-run and green (270 tests,
 ruff, mypy) after this addition.
+
+Manual tests run:
+* Checked in UI for temperature curve overlay: Worked as intended
+* ran inspect_activity script for i175720350 (with temperature) and i161860114 (without temperature); behavior as intended

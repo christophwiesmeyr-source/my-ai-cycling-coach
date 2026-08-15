@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pandas as pd
 
+from src.analysis.activity_metrics import grade_series
 from src.data.activity import Activity
 from src.ai.tools import (
     _get_activity_details,
@@ -87,6 +88,11 @@ def _real_activity(
     if temperature is not None:
         cols["temperature"] = _col(temperature)
     cols["distance"] = np.cumsum(_col(speed if speed is not None else 8.0)) * dt
+    if altitude is not None:
+        # Mirrors IntervalsClient._build_activity, which precomputes grade
+        # once at Activity-build time rather than at each consumer.
+        time_array = np.arange(n, dtype=float) * dt
+        cols["grade"] = grade_series(cols["altitude"], cols["distance"], time_array)
     if moving is not None:
         cols["moving"] = (
             np.asarray(moving, dtype=bool)
@@ -330,6 +336,71 @@ class TestGetActivityDetails:
         assert "Elevation:" in result
         assert "Ascent:" in result
         assert "Descent:" in result
+
+    def test_elevation_absent_without_altitude(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, altitude=None)
+        result = _get_activity_details(client, "42")
+        assert "Elevation:" not in result
+        assert "Max grade" not in result
+
+    @staticmethod
+    def _line_value(result: str, label: str) -> str:
+        line = next(ln for ln in result.splitlines() if ln.strip().startswith(label))
+        return line.split(label, 1)[1].strip()
+
+    def test_climbing_metrics_reported_for_real_climb(self) -> None:
+        # flat, then a steady 10% climb (80 m rise over 800 m run), then flat —
+        # keeps the smoothing window's edge effects away from the interior of
+        # the climb so the reported grade stays close to the true 10%.
+        flat_start = np.zeros(100)
+        climb = np.linspace(0, 80, 100)
+        flat_end = np.full(100, 80.0)
+        alt = np.concatenate([flat_start, climb, flat_end])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        max_grade = float(self._line_value(result, "Max grade:").rstrip("%"))
+        assert 5 < max_grade < 15
+        avg_grade = float(self._line_value(result, "Avg grade (climbing):").rstrip("%"))
+        assert 5 < avg_grade < 15
+        assert "Climbing time:" in result
+        assert self._line_value(result, "Climbing time:") != "0m00s (grade > 3%)"
+        ascent_line = self._line_value(result, "Ascent:")
+        assert "m/km)" in ascent_line
+
+    def test_climbing_lines_omitted_below_threshold(self) -> None:
+        # a steady ~2% grade for the whole ride — never crosses the 3% threshold
+        alt = np.linspace(0, 48, 300)
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        max_grade = float(self._line_value(result, "Max grade:").rstrip("%"))
+        assert max_grade < 3
+        assert "Avg grade (climbing):" not in result
+        assert "Climbing time:" not in result
+        assert "m/km)" in self._line_value(result, "Ascent:")
+
+    def test_ascent_per_km_stays_large_for_a_loop(self) -> None:
+        # start/end altitude equal (net elevation change ~0), but a real
+        # intermediate hill — ascent per km should stay large and nonzero,
+        # unlike a global/net average grade which would cancel to ~0 here.
+        alt = np.concatenate([np.linspace(0, 100, 150), np.linspace(100, 0, 150)])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        ascent_line = self._line_value(result, "Ascent:")
+        m_per_km = float(ascent_line.split("(")[1].split(" m/km")[0])
+        assert m_per_km > 20
 
     def test_download_error_returns_error_message(self) -> None:
         client = Mock()

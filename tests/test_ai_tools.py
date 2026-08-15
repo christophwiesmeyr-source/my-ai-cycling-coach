@@ -350,6 +350,20 @@ class TestGetActivityDetails:
         result = _get_activity_details(client, "42")
         assert "Temperature" not in result
 
+    def test_temperature_range_shown_when_values_vary(self) -> None:
+        client = Mock()
+        temps = np.concatenate([np.full(150, 15.0), np.full(150, 25.0)])
+        client.download_activity.return_value = _real_activity(n=300, temperature=temps)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 20 | 20 °C (15–25°C range)" in result
+
+    def test_temperature_range_omitted_when_constant(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=19.0)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 19 | 19 °C" in result
+        assert "range" not in result
+
 
 # ---------------------------------------------------------------------------
 # _get_activity_power_curve

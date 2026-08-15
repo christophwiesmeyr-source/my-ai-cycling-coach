@@ -15,6 +15,7 @@ intervals.icu's activity streams endpoint supports a `temp` stream type (mirrori
 - [x] intervals.icu's `temp` stream is fetched and mapped to a `temperature` column on `Activity.data`.
 - [x] Temperature is selectable in the existing primary/secondary metric plot dropdowns (main window), the same way heart rate/cadence/etc. are today — no dedicated UI code needed since dropdowns and plotting already derive from `Activity.available_metrics`.
 - [x] The AI coach's `get_activity_details` tool reports average temperature (moving | full, matching the existing dual-average pattern used for power/HR/speed/cadence) when temperature data is present for the activity.
+- [x] The Temperature line also shows the min/max range observed during the activity (e.g. `20 °C (15–25°C range)`), omitted when the range is degenerate (rounds to a single value) so it doesn't just repeat the average.
 - [x] Activities without a temperature stream (e.g. indoor trainer rides, or outdoor rides recorded on a device/sensor without a thermometer) continue to work unchanged: no temperature column, no temperature line in AI output, no errors.
 - [x] The `temp` -> `temperature` field-name mapping has been verified against a real intervals.icu API response for an activity known to have recorded temperature, per the note in `intervals_api.py`'s module docstring that stream field names were never independently confirmed live.
 - [x] A standalone CLI script exists that downloads one real activity by id via `IntervalsClient` and dumps (a) the raw stream summary (`available_metrics` plus per-metric count/min/max/mean) and (b) the output of every read-only AI coach tool (`get_activity_details`, `get_activity_power_curve`, `get_activity_training_load`, `get_activity_efficiency`, `get_activity_intervals`, `get_activity_zones`) for that activity — used to do the field-mapping verification above, and kept as a reusable dev tool for verifying future data/tool changes against a live activity.
@@ -26,6 +27,7 @@ intervals.icu's activity streams endpoint supports a `temp` stream type (mirrori
 - No `Activity` dataclass changes needed: `temperature` becomes a plain DataFrame column, and is automatically picked up by `available_metrics` (`src/data/activity.py:77-81`) and the metric dropdowns in `main_window.py`, which already populate from `available_metrics`.
 - Units: assume Celsius (intervals.icu/FIT convention, consistent with the app's other metric units e.g. altitude in meters). Confirm against the live verification call in Acceptance Criteria; adjust the label if the API returns something else.
 - Extend `_get_activity_details` (`src/ai/tools.py:296`) with an `_avg_line("Temperature", activity.get_time_series("temperature"), "°C")` call alongside the existing Power/Heart rate/Speed/Cadence lines (`src/ai/tools.py:357-362`). `_avg_line` already no-ops when a series is absent, so no extra guarding is needed for activities without temperature data.
+- `_avg_line` gains an `extra: str = ""` parameter appended after the unit, used only by the Temperature call to add a `" (lo–hi°C range)"` suffix computed via `np.nanmin`/`np.nanmax` over the temperature series, rounded to the same precision as the average and suppressed when `lo == hi` post-rounding.
 - `get_activity_efficiency`/decoupling tool output (`src/ai/tools.py:511`) is explicitly not touched by this story — see Out of Scope.
 - No FIT-file-direct ingestion path exists in this app; intervals.icu is the sole activity data source (per `intervals_api.py`'s module docstring), so no other ingestion code needs updating.
 - New verification script: `src/data/inspect_activity.py`, `python -m src.data.inspect_activity <activity_id>` — follows the existing `export_for_bench.py` precedent (standalone script, `IntervalsClient()` default-constructed, `if __name__ == "__main__"` entry point). It downloads the activity once, prints `activity.available_metrics` with basic stats per column (via `activity.data.describe()` or equivalent), then constructs a `ToolUseBlock` for each read-only tool in `src/ai/tools.py` and prints `_execute_tool`'s output for each — exercising the exact dispatch path the AI coach uses in production, not a reimplementation of it. Read-only only (no write/mutating tools exist today, but exclude any if added later). Requires a configured `intervals.icu` API key/athlete id (same config as the rest of the app) and live network access, so it stays a manual dev tool — not wired into `pytest`.
@@ -122,3 +124,26 @@ run, not just read through):
 
 All of `pytest` (268 tests, all passing), `ruff check .`, `ruff format .`,
 and `mypy ./` (53 source files, no issues) pass with no failures.
+
+**Follow-up addition** (during the user's own manual testing of this
+branch, after the above was already `done`): a min/max range suffix was
+added to the Temperature line, e.g. `Temperature: 20 | 20 °C (15–25°C
+range)`, per the Peaks-section discussion below. Implemented as an
+`extra` parameter on `_avg_line` (only Temperature passes a non-empty
+value), computed from `np.nanmin`/`np.nanmax` and suppressed when the
+rounded range is degenerate. Also fixed an unrelated pre-existing
+duplicate line in the same function (`hr = activity.get_time_series(...)`
+was called twice in a row in the Peaks section, harmless but redundant —
+removed).
+
+Considered and rejected: adding max temperature to the existing "Peaks"
+section instead. Peaks is specifically about exertion (max power, max
+HR) — temperature is environmental, not something the rider produced —
+so folding it in there would blur what that section means. The range
+suffix on the existing Averages line keeps the same information without
+that mismatch.
+
+New tests: `test_temperature_range_shown_when_values_vary` and
+`test_temperature_range_omitted_when_constant` in
+`tests/test_ai_tools.py`. Full check suite re-run and green (270 tests,
+ruff, mypy) after this addition.

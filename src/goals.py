@@ -1,7 +1,10 @@
 """Canonical metadata for training goal fields — shared by the UI and plan generator."""
 
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
+
+from src.constants import GOALS_PATH
 
 
 @dataclass
@@ -29,3 +32,32 @@ GOAL_FIELDS: list[GoalMeta] = [
     GoalMeta("gender", "Gender"),
     GoalMeta("additional_notes", "Notes"),
 ]
+
+
+def load_goals() -> dict:
+    try:
+        return json.loads(GOALS_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def format_goals_table(goals: dict, title: str) -> str:
+    if not goals:
+        return ""
+
+    rows = []
+    for gm in GOAL_FIELDS:
+        v = goals.get(gm.key)
+        if v:
+            rows.append((gm.label, gm.format_value(v)))
+        # insert computed event fields directly after event_name
+        if gm.key == "event_name":
+            if goals.get("event_date"):
+                rows.append(("Event date", goals["event_date"]))
+            if goals.get("weeks_until_event"):
+                rows.append(("Weeks to event", str(goals["weeks_until_event"])))
+    if goals.get("current_date"):
+        rows.append(("Generated on", goals["current_date"]))
+
+    table_rows = "\n".join(f"| {k} | {v} |" for k, v in rows)
+    return f"## {title}\n\n| Parameter | Value |\n|-----------|-------|\n{table_rows}\n\n---"

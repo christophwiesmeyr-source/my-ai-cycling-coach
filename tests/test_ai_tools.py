@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pandas as pd
 
+from src.analysis.activity_metrics import grade_series
 from src.data.activity import Activity
 from src.ai.tools import (
     _get_activity_details,
@@ -54,6 +55,7 @@ def _real_activity(
     cadence: Any = 85.0,
     speed: Any = 8.0,
     altitude: Any = None,
+    temperature: Any = None,
     moving: Any = True,
     sport: str = "Ride",
     elapsed: Optional[float] = None,
@@ -83,7 +85,14 @@ def _real_activity(
         cols["speed"] = _col(speed)
     if altitude is not None:
         cols["altitude"] = _col(altitude)
+    if temperature is not None:
+        cols["temperature"] = _col(temperature)
     cols["distance"] = np.cumsum(_col(speed if speed is not None else 8.0)) * dt
+    if altitude is not None:
+        # Mirrors IntervalsClient._build_activity, which precomputes grade
+        # once at Activity-build time rather than at each consumer.
+        time_array = np.arange(n, dtype=float) * dt
+        cols["grade"] = grade_series(cols["altitude"], cols["distance"], time_array)
     if moving is not None:
         cols["moving"] = (
             np.asarray(moving, dtype=bool)
@@ -328,12 +337,103 @@ class TestGetActivityDetails:
         assert "Ascent:" in result
         assert "Descent:" in result
 
+    def test_elevation_absent_without_altitude(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, altitude=None)
+        result = _get_activity_details(client, "42")
+        assert "Elevation:" not in result
+        assert "Max grade" not in result
+
+    @staticmethod
+    def _line_value(result: str, label: str) -> str:
+        line = next(ln for ln in result.splitlines() if ln.strip().startswith(label))
+        return line.split(label, 1)[1].strip()
+
+    def test_climbing_metrics_reported_for_real_climb(self) -> None:
+        # flat, then a steady 10% climb (80 m rise over 800 m run), then flat —
+        # keeps the smoothing window's edge effects away from the interior of
+        # the climb so the reported grade stays close to the true 10%.
+        flat_start = np.zeros(100)
+        climb = np.linspace(0, 80, 100)
+        flat_end = np.full(100, 80.0)
+        alt = np.concatenate([flat_start, climb, flat_end])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        max_grade = float(self._line_value(result, "Max grade:").rstrip("%"))
+        assert 5 < max_grade < 15
+        avg_grade = float(self._line_value(result, "Avg grade (climbing):").rstrip("%"))
+        assert 5 < avg_grade < 15
+        assert "Climbing time:" in result
+        assert self._line_value(result, "Climbing time:") != "0m00s (grade > 3%)"
+        ascent_line = self._line_value(result, "Ascent:")
+        assert "m/km)" in ascent_line
+
+    def test_climbing_lines_omitted_below_threshold(self) -> None:
+        # a steady ~2% grade for the whole ride — never crosses the 3% threshold
+        alt = np.linspace(0, 48, 300)
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        max_grade = float(self._line_value(result, "Max grade:").rstrip("%"))
+        assert max_grade < 3
+        assert "Avg grade (climbing):" not in result
+        assert "Climbing time:" not in result
+        assert "m/km)" in self._line_value(result, "Ascent:")
+
+    def test_ascent_per_km_stays_large_for_a_loop(self) -> None:
+        # start/end altitude equal (net elevation change ~0), but a real
+        # intermediate hill — ascent per km should stay large and nonzero,
+        # unlike a global/net average grade which would cancel to ~0 here.
+        alt = np.concatenate([np.linspace(0, 100, 150), np.linspace(100, 0, 150)])
+        client = Mock()
+        client.download_activity.return_value = _real_activity(
+            n=300, altitude=alt, speed=8.0
+        )
+        result = _get_activity_details(client, "42")
+
+        ascent_line = self._line_value(result, "Ascent:")
+        m_per_km = float(ascent_line.split("(")[1].split(" m/km")[0])
+        assert m_per_km > 20
+
     def test_download_error_returns_error_message(self) -> None:
         client = Mock()
         client.download_activity.side_effect = Exception("timeout")
         result = _get_activity_details(client, "42")
         assert "Failed to download activity 42" in result
         assert "timeout" in result
+
+    def test_temperature_line_present_when_series_available(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=19.0)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 19 | 19 °C" in result
+
+    def test_temperature_line_absent_when_series_missing(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=None)
+        result = _get_activity_details(client, "42")
+        assert "Temperature" not in result
+
+    def test_temperature_range_shown_when_values_vary(self) -> None:
+        client = Mock()
+        temps = np.concatenate([np.full(150, 15.0), np.full(150, 25.0)])
+        client.download_activity.return_value = _real_activity(n=300, temperature=temps)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 20 | 20 °C (15–25°C range)" in result
+
+    def test_temperature_range_omitted_when_constant(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=19.0)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 19 | 19 °C" in result
+        assert "range" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -373,14 +473,14 @@ class TestGetActivityTrainingLoad:
     def test_no_power_returns_message(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=100, power=None)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "goals.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "goals.json"):
             result = _get_activity_training_load(client, "42")
         assert "needs power" in result
 
     def test_core_metrics_without_goals(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=200.0)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_training_load(client, "42")
         assert "Normalized Power: 200 W" in result  # constant power → NP == avg
         assert "Variability Index: 1.00" in result
@@ -393,7 +493,7 @@ class TestGetActivityTrainingLoad:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=3600, power=250.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_training_load(client, "42")
         assert "Intensity Factor: 1.00 (FTP 250 W)" in result
         # 1 h at FTP → ~100 TSS
@@ -404,7 +504,7 @@ class TestGetActivityTrainingLoad:
         goals.write_text(json.dumps({"weight_kg": 70}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=210.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_training_load(client, "42")
         assert "3.00 W/kg" in result
 
@@ -413,7 +513,7 @@ class TestGetActivityTrainingLoad:
         client.download_activity.return_value = _real_activity(
             n=600, power=200.0, heart_rate=160.0
         )
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_training_load(client, "42")
         assert "Efficiency Factor: 1.25 W/beat" in result
 
@@ -481,7 +581,7 @@ class TestGetActivityIntervals:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = self._activity_with_block(hr_drift=True)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "1 structured work interval" in result
         assert "Interval 1:" in result
@@ -506,7 +606,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         lines = {
             line.split(":")[0].strip(): line
@@ -528,7 +628,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "Interval 1:" in result
         assert "HRR60" not in result
@@ -545,7 +645,7 @@ class TestGetActivityIntervals:
         activity = _real_activity(n=n, power=power, heart_rate=hr, cadence=90.0)
         client = Mock()
         client.download_activity.return_value = activity
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "Interval 1:" in result
         assert "HRR60" not in result
@@ -555,21 +655,21 @@ class TestGetActivityIntervals:
         goals.write_text(json.dumps({"current_ftp_watts": 250}))
         client = Mock()
         client.download_activity.return_value = _real_activity(n=600, power=100.0)
-        with patch("src.ai.tools.GOALS_PATH", goals):
+        with patch("src.goals.GOALS_PATH", goals):
             result = _get_activity_intervals(client, "42")
         assert "No structured work intervals" in result
 
     def test_no_power_returns_message(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = _real_activity(n=300, power=None)
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_intervals(client, "42")
         assert "No power data" in result
 
     def test_no_ftp_omits_percent(self, tmp_path: Path) -> None:
         client = Mock()
         client.download_activity.return_value = self._activity_with_block()
-        with patch("src.ai.tools.GOALS_PATH", tmp_path / "missing.json"):
+        with patch("src.goals.GOALS_PATH", tmp_path / "missing.json"):
             result = _get_activity_intervals(client, "42")
         assert "no FTP set" in result
         assert "% FTP)" not in result

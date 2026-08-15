@@ -6,20 +6,20 @@
 #
 -e ./interval_detection
     # via -r requirements.in
-annotated-types==0.7.0
+annotated-types==0.8.0
     # via pydantic
-anthropic==0.117.0
+anthropic==0.122.0
     # via -r requirements.in
 anyio==4.14.2
     # via
     #   anthropic
     #   httpx
-certifi==2026.6.17
+certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
     #   requests
-charset-normalizer==3.4.9
+charset-normalizer==3.5.1
     # via requests
 colorama==0.4.6
     # via pyqtgraph
@@ -40,15 +40,15 @@ idna==3.18
     #   requests
 jiter==0.16.0
     # via anthropic
-markdown==3.10.2
+markdown==3.10.3
     # via -r requirements.in
-numpy==2.5.1
+numpy==2.5.2
     # via
     #   -r requirements.in
     #   interval-detection
     #   pandas
     #   pyqtgraph
-pandas==3.0.3
+pandas==3.0.5
     # via -r requirements.in
 pydantic==2.13.4
     # via anthropic
@@ -58,7 +58,7 @@ pyqt6==6.11.0
     # via -r requirements.in
 pyqt6-qt6==6.11.1
     # via pyqt6
-pyqt6-sip==13.11.1
+pyqt6-sip==13.12.0
     # via pyqt6
 pyqtgraph==0.14.0
     # via -r requirements.in
@@ -76,11 +76,11 @@ typing-extensions==4.16.0
     #   pydantic
     #   pydantic-core
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.4
     # via pydantic
 urllib3==2.7.0
     # via requests
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==83.0.0
+setuptools==84.0.0
     # via -r requirements.in

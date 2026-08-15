@@ -87,6 +87,16 @@ chmod 600 ~/.my-ai-cycling-coach/claude_api_key
 python main.py
 ```
 
+### Test Mode
+
+Pass `--test` to point the app at an isolated data directory
+(`~/.my-ai-cycling-coach-test` instead of `~/.my-ai-cycling-coach`) — useful
+for trying out changes without touching your real config, plans, or goals:
+
+```bash
+python main.py --test
+```
+
 ### Loading Activities
 
 On startup, activities from the last year are loaded from intervals.icu using metadata only.

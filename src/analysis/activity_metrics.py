@@ -123,33 +123,84 @@ def time_summary(activity: Activity) -> dict:
     return result
 
 
-def elevation_changes(
+def _smoothed_altitude(
     altitude: np.ndarray, time_array: np.ndarray, smooth_window_s: float = 20.0
-) -> tuple[float, float]:
-    # NaNs are interpolated and the signal is smoothed before summing positive /
-    # negative deltas, which suppresses GPS/barometric jitter that would
-    # otherwise inflate both figures.
-    if altitude is None or len(altitude) < 2:
-        return 0.0, 0.0
+) -> np.ndarray:
+    # NaNs are interpolated before smoothing so a single dropout doesn't punch a
+    # hole in the rolling window. Centred rolling mean with min_periods=1 —
+    # unlike a zero-padded convolution it introduces no edge bias, which would
+    # otherwise fabricate ascent/descent (or grade) at the start/end of the ride.
     alt = np.asarray(altitude, dtype=float)
     valid = ~np.isnan(alt)
-    if np.sum(valid) < 2:
-        return 0.0, 0.0
-    if not valid.all():
+    if not valid.all() and valid.any():
         idx = np.arange(len(alt))
         alt = np.interp(idx, idx[valid], alt[valid])
 
-    # Centred rolling mean with min_periods=1 — unlike a zero-padded convolution
-    # it introduces no edge bias, which would otherwise fabricate ascent/descent
-    # at the start and end of the ride.
     window = max(1, int(round(smooth_window_s / representative_dt(time_array))))
-    smoothed = (
-        pd.Series(alt).rolling(window, center=True, min_periods=1).mean().to_numpy()
-    )
+    return pd.Series(alt).rolling(window, center=True, min_periods=1).mean().to_numpy()
+
+
+def elevation_changes(
+    altitude: np.ndarray, time_array: np.ndarray, smooth_window_s: float = 20.0
+) -> tuple[float, float]:
+    if altitude is None or len(altitude) < 2:
+        return 0.0, 0.0
+    alt = np.asarray(altitude, dtype=float)
+    if np.sum(~np.isnan(alt)) < 2:
+        return 0.0, 0.0
+
+    smoothed = _smoothed_altitude(alt, time_array, smooth_window_s)
     diffs = np.diff(smoothed)
     ascent = float(np.sum(diffs[diffs > 0]))
     descent = float(-np.sum(diffs[diffs < 0]))
     return ascent, descent
+
+
+# Below this run (horizontal distance between consecutive smoothing-window
+# points), a sample's grade is undefined rather than computed — this is what
+# keeps stops/GPS distance jitter from producing spurious extreme grades.
+MIN_GRADE_RUN_M = 1.0
+
+# The smoothed grade above which a sample counts as "climbing" for
+# climbing_time_s and the AI coach's avg-climbing-grade figure.
+CLIMBING_GRADE_THRESHOLD_PCT = 3.0
+
+
+def grade_series(
+    altitude: np.ndarray,
+    distance: np.ndarray,
+    time_array: np.ndarray,
+    smooth_window_s: float = 20.0,
+) -> np.ndarray:
+    # rise / run * 100, from smoothed altitude (suppresses GPS/barometric
+    # jitter, matching elevation_changes) over raw cumulative distance
+    # (already low-noise, not smoothed). np.diff shortens the array by one, so
+    # a leading NaN pad keeps it aligned 1:1 with time_array/other columns.
+    n = len(altitude) if altitude is not None else 0
+    if n < 2 or distance is None or len(distance) < 2:
+        return np.full(n, np.nan)
+
+    smoothed = _smoothed_altitude(altitude, time_array, smooth_window_s)
+    dist = np.asarray(distance, dtype=float)
+    rise = np.diff(smoothed)
+    run = np.diff(dist)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        grade = np.where(run >= MIN_GRADE_RUN_M, rise / run * 100.0, np.nan)
+    return np.concatenate([[np.nan], grade])
+
+
+def climbing_time_s(
+    grade: np.ndarray,
+    time_array: np.ndarray,
+    threshold_pct: float = CLIMBING_GRADE_THRESHOLD_PCT,
+) -> float:
+    if grade is None or len(grade) == 0:
+        return 0.0
+    mask = np.asarray(grade, dtype=float) > threshold_pct
+    w = sample_weights(time_array)
+    n = min(len(w), len(mask))
+    return float(np.sum(w[:n][mask[:n]]))
 
 
 def weighted_average(

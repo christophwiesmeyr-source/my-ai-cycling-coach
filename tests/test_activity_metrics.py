@@ -8,7 +8,9 @@ import pytest
 
 from src.data.activity import Activity
 from src.analysis.activity_metrics import (
+    climbing_time_s,
     elevation_changes,
+    grade_series,
     heart_rate_recovery_60s,
     normalized_power,
     pedaling_mask,
@@ -177,6 +179,91 @@ class TestElevationChanges:
 
     def test_empty_returns_zero(self) -> None:
         assert elevation_changes(np.array([]), np.array([])) == (0.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# grade_series / climbing_time_s
+# ---------------------------------------------------------------------------
+
+
+class TestGradeSeries:
+    def test_steady_climb_returns_constant_grade(self) -> None:
+        n = 300
+        distance = np.arange(n, dtype=float) * 8.0  # 8 m run per sample
+        altitude = distance * 0.05  # exact 5% grade
+        t = np.arange(n, dtype=float)
+        grade = grade_series(altitude, distance, t)
+        assert len(grade) == n
+        assert np.isnan(grade[0])
+        interior = grade[30:-30]
+        assert np.all(~np.isnan(interior))
+        assert interior == pytest.approx(5.0, abs=1.0)
+
+    def test_flat_then_climb(self) -> None:
+        n = 300
+        flat = np.zeros(150)
+        climb = np.linspace(0, 96, 150)  # 96 m rise over 150 * 8 m = 1200 m run → 8%
+        altitude = np.concatenate([flat, climb])
+        distance = np.arange(n, dtype=float) * 8.0
+        t = np.arange(n, dtype=float)
+        grade = grade_series(altitude, distance, t)
+        flat_interior = grade[30:100]
+        climb_interior = grade[180:270]
+        assert np.all(np.abs(flat_interior) < 1.0)
+        assert climb_interior == pytest.approx(8.0, abs=1.5)
+
+    def test_stationary_section_returns_nan_not_spike(self) -> None:
+        moving_distance = np.arange(100, dtype=float) * 8.0
+        stationary_distance = np.full(100, moving_distance[-1])
+        distance = np.concatenate([moving_distance, stationary_distance])
+        altitude = np.concatenate([np.linspace(0, 10, 100), np.full(100, 10.0)])
+        t = np.arange(200, dtype=float)
+        grade = grade_series(altitude, distance, t)
+        # distance stops advancing at index 100 → grade must go NaN, not spike
+        assert np.all(np.isnan(grade[105:]))
+
+    def test_nan_altitude_is_interpolated(self) -> None:
+        n = 100
+        altitude = np.linspace(0, 50, n)
+        altitude[40:50] = np.nan
+        distance = np.arange(n, dtype=float) * 8.0
+        t = np.arange(n, dtype=float)
+        grade = grade_series(altitude, distance, t)
+        interior = grade[20:80]
+        assert np.all(~np.isnan(interior))
+        assert interior == pytest.approx(6.3, abs=1.0)
+
+    def test_empty_returns_empty_array(self) -> None:
+        assert len(grade_series(np.array([]), np.array([]), np.array([]))) == 0
+
+    def test_missing_distance_returns_all_nan(self) -> None:
+        altitude = np.linspace(0, 10, 50)
+        grade = grade_series(altitude, np.array([]), np.arange(50, dtype=float))
+        assert len(grade) == 50
+        assert np.all(np.isnan(grade))
+
+
+class TestClimbingTimeS:
+    def test_sums_time_above_threshold(self) -> None:
+        grade = np.zeros(100)
+        grade[20:50] = 5.0  # 30 samples above the 3% default threshold
+        t = np.arange(100, dtype=float)
+        assert climbing_time_s(grade, t) == pytest.approx(30.0)
+
+    def test_all_nan_returns_zero(self) -> None:
+        grade = np.full(50, np.nan)
+        t = np.arange(50, dtype=float)
+        assert climbing_time_s(grade, t) == 0.0
+
+    def test_all_below_threshold_returns_zero(self) -> None:
+        grade = np.full(50, 1.0)
+        t = np.arange(50, dtype=float)
+        assert climbing_time_s(grade, t) == 0.0
+
+    def test_custom_threshold(self) -> None:
+        grade = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        t = np.arange(5, dtype=float)
+        assert climbing_time_s(grade, t, threshold_pct=2.5) == pytest.approx(3.0)
 
 
 # ---------------------------------------------------------------------------

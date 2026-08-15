@@ -3,11 +3,15 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from src.ai.plan_generator import (
     _build_plan_header,
     _build_plan_prompt,
     _build_sessions_prompt,
     _extract_csv,
+    _extract_text_content,
+    _raise_if_truncated,
     clear_derived_plan_data,
 )
 
@@ -86,16 +90,10 @@ class TestBuildPlanHeader:
         goals = {"main_goal": "Race"}
         assert _build_plan_header(goals).endswith("---")
 
-    def test_empty_goals_produces_empty_table(self) -> None:
-        header = _build_plan_header({})
-        assert "| Parameter | Value |" in header
-        # No data rows beyond the header
-        lines = [
-            line
-            for line in header.splitlines()
-            if line.startswith("|") and "Parameter" not in line and "---" not in line
-        ]
-        assert lines == []
+    def test_empty_goals_produces_empty_string(self) -> None:
+        # format_goals_table (src/goals.py) returns "" for empty goals; this
+        # never happens in practice since the UI form always sets main_goal.
+        assert _build_plan_header({}) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +176,62 @@ class TestBuildSessionsPrompt:
         assert (
             "date,week,phase,type,duration_min,intensity,target_power_pct_ftp" in prompt
         )
+
+    def test_contains_worked_comma_quoting_example(self) -> None:
+        # A real run generated an unquoted field containing a comma, which
+        # broke column alignment on read. The rule alone ("wrap in quotes if
+        # it contains a comma") wasn't enough — models follow a concrete
+        # example far more reliably than an abstract instruction.
+        prompt = _build_sessions_prompt(self.PLAN, self.GOALS)
+        assert "MUST wrap that" in prompt
+        assert '"3 x 20 min @ 76-90% FTP, then 10 min @ Zone 1 recovery"' in prompt
+
+
+# ---------------------------------------------------------------------------
+# _raise_if_truncated
+# ---------------------------------------------------------------------------
+
+
+class TestRaiseIfTruncated:
+    def test_does_not_raise_on_end_turn(self) -> None:
+        _raise_if_truncated("end_turn", "Plan generation")  # must not raise
+
+    def test_raises_on_max_tokens(self) -> None:
+        with pytest.raises(RuntimeError, match="max_tokens"):
+            _raise_if_truncated("max_tokens", "Plan generation")
+
+    def test_error_message_includes_context(self) -> None:
+        with pytest.raises(RuntimeError, match="Session list generation"):
+            _raise_if_truncated("max_tokens", "Session list generation")
+
+
+# ---------------------------------------------------------------------------
+# _extract_text_content
+# ---------------------------------------------------------------------------
+
+
+class _FakeTextBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeThinkingBlock:
+    def __init__(self, thinking: str) -> None:
+        self.thinking = thinking
+
+
+class TestExtractTextContent:
+    def test_skips_leading_thinking_block(self) -> None:
+        # Regression: a model may emit a ThinkingBlock ahead of the text
+        # block, so content[0] can't be assumed to be the text.
+        content = [_FakeThinkingBlock("reasoning..."), _FakeTextBlock("the plan")]
+        assert _extract_text_content(content) == "the plan"
+
+    def test_single_text_block(self) -> None:
+        assert _extract_text_content([_FakeTextBlock("only this")]) == "only this"
+
+    def test_empty_content_returns_empty_string(self) -> None:
+        assert _extract_text_content([]) == ""
 
 
 # ---------------------------------------------------------------------------

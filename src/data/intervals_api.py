@@ -12,20 +12,23 @@ Field-name mapping below is based on intervals.icu's published API docs and
 community examples (the docs page itself is a JS-rendered Swagger UI that
 couldn't be fully introspected offline). The activity-list `id` field shape
 has been confirmed against a live response; the per-activity metadata fields
-and stream type names (watts/heartrate/cadence/altitude/velocity_smooth) have
-NOT been independently verified — check them against a real
+and stream type names (watts/heartrate/cadence/altitude/velocity_smooth/temp)
+have NOT been independently verified — check them against a real
 download_activity() call and adjust _normalize_activity / _build_activity if
-any don't match.
+any don't match. `src/data/inspect_activity.py` is a standalone dev script
+for exactly this kind of live verification.
 """
 
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 import requests
 
 from .activity import Activity
+from src.analysis.activity_metrics import grade_series
 from src.constants import INTERVALS_CONFIG_PATH
 
 
@@ -38,7 +41,7 @@ class IntervalsClient:
 
     CONFIG_FILE = INTERVALS_CONFIG_PATH
     BASE_URL = "https://intervals.icu/api/v1"
-    STREAM_TYPES = "time,watts,heartrate,cadence,distance,altitude,velocity_smooth"
+    STREAM_TYPES = "time,watts,heartrate,cadence,distance,altitude,velocity_smooth,temp"
 
     def __init__(self, api_key: Optional[str] = None, athlete_id: Optional[str] = None):
         config = self._load_config()
@@ -157,11 +160,19 @@ class IntervalsClient:
             "cadence": "cadence",
             "watts": "power",
             "velocity_smooth": "speed",
+            "temp": "temperature",
         }
         for stream_key, column_name in field_mapping.items():
             values = by_type.get(stream_key)
             if values is not None:
                 data[column_name] = values
+
+        # Derived here (data layer calling into analysis) rather than at each
+        # consumer, so the UI plot dropdown and the AI tool see the same
+        # precomputed column instead of needing two derivation paths.
+        if "altitude" in data and "distance" in data:
+            time_array = np.asarray(time_values, dtype=float)
+            data["grade"] = grade_series(data["altitude"], data["distance"], time_array)
 
         # No per-sample "moving" stream is mapped (intervals.icu doesn't
         # expose Strava's boolean moving stream); total_moving_time from

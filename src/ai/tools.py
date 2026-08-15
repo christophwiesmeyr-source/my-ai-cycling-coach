@@ -9,8 +9,11 @@ from anthropic.types import ContentBlock, ToolParam, ToolUseBlock
 
 from src.constants import ACTIVITY_HISTORY_WEEKS, GOALS_PATH
 from src.data.intervals_api import IntervalsClient
+from src.goals import load_goals
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
+    CLIMBING_GRADE_THRESHOLD_PCT,
+    climbing_time_s,
     elevation_changes,
     heart_rate_recovery_60s,
     moving_mask,
@@ -47,9 +50,13 @@ TOOLS: list[ToolParam] = [
     {
         "name": "get_activity_details",
         "description": (
-            "Download detailed metrics for a specific activity: duration, distance, "
-            "average and max power, best rolling power efforts (1 min, 10 min, 20 min), "
-            "and average/max heart rate. Use the activity ID returned by list_recent_activities."
+            "Download detailed metrics for a specific activity: duration and distance; "
+            "time accounting (elapsed, moving, stopped, stop count); elevation (ascent "
+            "with ascent per km, descent, max grade, average climbing grade, climbing "
+            "time above a 3% grade threshold); moving-vs-full averages for power, heart "
+            "rate, speed, cadence, and temperature; pedalling power and coasting share; "
+            "and peak power/heart rate. Use the activity ID returned by "
+            "list_recent_activities."
         ),
         "input_schema": {
             "type": "object",
@@ -286,13 +293,6 @@ def _fmt_duration(seconds: float) -> str:
     return f"{h}h{m:02d}m{s:02d}s" if h > 0 else f"{m}m{s:02d}s"
 
 
-def _load_goals() -> dict:
-    try:
-        return json.loads(GOALS_PATH.read_text())
-    except Exception:
-        return {}
-
-
 def _get_activity_details(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
@@ -307,8 +307,13 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
     lines.append(f"Sport: {activity.sport}")
 
     distance = activity.get_time_series("distance")
-    if distance is not None and len(distance) > 0:
-        lines.append(f"Distance: {float(distance[-1]) / 1000:.1f} km")
+    distance_km = (
+        float(distance[-1]) / 1000
+        if distance is not None and len(distance) > 0
+        else None
+    )
+    if distance_km is not None:
+        lines.append(f"Distance: {distance_km:.1f} km")
 
     # Time accounting
     lines.append("Time:")
@@ -327,8 +332,23 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
     )
     if ascent or descent:
         lines.append("Elevation:")
-        lines.append(f"  Ascent: {ascent:.0f} m")
+        ascent_extra = f" ({ascent / distance_km:.0f} m/km)" if distance_km else ""
+        lines.append(f"  Ascent: {ascent:.0f} m{ascent_extra}")
         lines.append(f"  Descent: {descent:.0f} m")
+
+        grade = activity.get_time_series("grade")
+        if grade is not None and len(grade) > 0 and not np.all(np.isnan(grade)):
+            lines.append(f"  Max grade: {np.nanmax(grade):.0f}%")
+            avg = weighted_average(
+                grade, time_array, mask=grade > CLIMBING_GRADE_THRESHOLD_PCT
+            )
+            if avg is not None:
+                climbing_s = climbing_time_s(grade, time_array)
+                lines.append(f"  Avg grade (climbing): {avg:.0f}%")
+                lines.append(
+                    f"  Climbing time: {_fmt_duration(climbing_s)} "
+                    f"(grade > {CLIMBING_GRADE_THRESHOLD_PCT:.0f}%)"
+                )
 
     # Averages: moving vs full where a moving mask is available
     dual = mask is not None
@@ -341,6 +361,7 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
         unit: str,
         scale: float = 1.0,
         fmt: str = "{:.0f}",
+        extra: str = "",
     ) -> None:
         full = weighted_average(series, time_array)
         if full is None:
@@ -349,10 +370,12 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
             mv = weighted_average(series, time_array, mask)
             mv_str = fmt.format(mv * scale) if mv is not None else "—"
             avg_lines.append(
-                f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}".rstrip()
+                f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}{extra}".rstrip()
             )
         else:
-            avg_lines.append(f"  {label}: {fmt.format(full * scale)} {unit}".rstrip())
+            avg_lines.append(
+                f"  {label}: {fmt.format(full * scale)} {unit}{extra}".rstrip()
+            )
 
     _avg_line("Power", activity.get_time_series("power"), "W")
     _avg_line("Heart rate", activity.get_time_series("heart_rate"), "bpm")
@@ -360,6 +383,22 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
         "Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}"
     )
     _avg_line("Cadence", activity.get_time_series("cadence"), "rpm")
+
+    # Min/max range is only shown alongside the average when it's actually
+    # informative — a near-constant reading (rounds to the same value as
+    # both ends) would just repeat the average line.
+    temperature = activity.get_time_series("temperature")
+    temp_extra = ""
+    if temperature is not None and len(temperature) > 0:
+        temp_arr = np.asarray(temperature, dtype=float)
+        if not np.all(np.isnan(temp_arr)):
+            lo, hi = (
+                round(float(np.nanmin(temp_arr))),
+                round(float(np.nanmax(temp_arr))),
+            )
+            if lo != hi:
+                temp_extra = f" ({lo:.0f}–{hi:.0f}°C range)"
+    _avg_line("Temperature", temperature, "°C", extra=temp_extra)
 
     if avg_lines:
         lines.append(header)
@@ -393,7 +432,6 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
             lines += ped_lines
 
     # Peaks
-    hr = activity.get_time_series("heart_rate")
     hr = activity.get_time_series("heart_rate")
     peaks = []
     if power is not None and len(power) > 0 and not np.all(np.isnan(power)):
@@ -447,7 +485,7 @@ def _get_activity_training_load(
     time_array = activity.get_time_array()
     mask = moving_mask(activity)
     times = time_summary(activity)
-    goals = _load_goals()
+    goals = load_goals()
     ftp = int(goals.get("current_ftp_watts") or 0)
     weight = float(goals.get("weight_kg") or 0)
 
@@ -585,7 +623,7 @@ def _get_activity_intervals(activity_client: IntervalsClient, activity_id: str) 
     time_array = np.asarray(time_array, dtype=float)[:n]
     power = np.asarray(power, dtype=float)[:n]
 
-    goals = _load_goals()
+    goals = load_goals()
     ftp = int(goals.get("current_ftp_watts") or 0) or None
 
     intervals = detect_intervals(time_array, power, ftp=ftp)

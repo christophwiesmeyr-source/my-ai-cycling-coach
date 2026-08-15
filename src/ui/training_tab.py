@@ -30,7 +30,12 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QColor, QBrush
 
 from src.ai import ChatSession, PLAN_ORIGINAL_PATH, PLAN_ADAPTED_PATH
-from src.constants import GOALS_PATH, SESSIONS_ORIGINAL_PATH, SESSIONS_LOG_PATH
+from src.constants import (
+    GOALS_PATH,
+    SESSIONS_ORIGINAL_PATH,
+    SESSIONS_ADAPTED_PATH,
+    SESSIONS_LOG_PATH,
+)
 from src.data.intervals_api import IntervalsClient
 from src.goals import GOAL_FIELDS
 from .workers import PlanGeneratorWorker, PlanAdaptorWorker, ChatWorker
@@ -441,6 +446,8 @@ class TrainingTab(QWidget):
         worker = PlanAdaptorWorker(self.activity_client)
         worker.finished.connect(self._on_plan_adapted)
         worker.error_occurred.connect(self._on_error)
+        worker.sessions_failed.connect(self._on_sessions_failed)
+        worker.sessions_incomplete.connect(self._on_sessions_incomplete)
         worker.finished.connect(lambda: self._set_busy(False, ""))
         worker.error_occurred.connect(lambda: self._set_busy(False, ""))
         self._active_worker = worker
@@ -450,8 +457,27 @@ class TrainingTab(QWidget):
         self.adapted_plan_view.setHtml(self._render_markdown(plan))
         self.plan_tabs.setCurrentIndex(1)
         self.chat_session.reload_plans()
+        self._load_sessions_table()
         self._append_chat_system(
             "Adapted plan ready. Ask your coach about the changes."
+        )
+
+    def _on_sessions_failed(self) -> None:
+        QMessageBox.warning(
+            self,
+            "Session List Not Updated",
+            "The adapted plan was saved, but generating the updated session "
+            "list failed. The Sessions table will keep showing the previous "
+            "schedule until the next successful adaptation.",
+        )
+
+    def _on_sessions_incomplete(self, dropped_rows: int) -> None:
+        plural = "s" if dropped_rows != 1 else ""
+        QMessageBox.warning(
+            self,
+            "Some Sessions Could Not Be Parsed",
+            f"The adapted session list was saved, but {dropped_rows} session{plural} "
+            "could not be parsed from the AI response and were skipped.",
         )
 
     # ------------------------------------------------------------------ #
@@ -531,12 +557,17 @@ class TrainingTab(QWidget):
         return goals
 
     def _load_sessions_table(self) -> None:
-        if not SESSIONS_ORIGINAL_PATH.exists():
+        sessions_path = (
+            SESSIONS_ADAPTED_PATH
+            if SESSIONS_ADAPTED_PATH.exists()
+            else SESSIONS_ORIGINAL_PATH
+        )
+        if not sessions_path.exists():
             return
 
         log = self._load_sessions_log()
 
-        with open(SESSIONS_ORIGINAL_PATH, newline="", encoding="utf-8") as f:
+        with open(sessions_path, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
 
         if not rows:

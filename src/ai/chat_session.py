@@ -13,6 +13,7 @@ from src.constants import (
     SESSIONS_LOG_PATH,
     ACTIVITY_HISTORY_WEEKS,
 )
+from src.goals import format_goals_table, load_goals
 
 _SYSTEM_BASE = (
     "You are an expert cycling coach assistant. Help the athlete understand their training "
@@ -127,4 +128,11 @@ class ChatSession:
         session_table = _build_session_table()
         if session_table:
             blocks.append({"type": "text", "text": f"\n\n{session_table}"})
+
+        profile_section = format_goals_table(
+            load_goals(), "Current athlete profile (live)"
+        )
+        if profile_section:
+            blocks.append({"type": "text", "text": f"\n\n{profile_section}"})
+
         return blocks

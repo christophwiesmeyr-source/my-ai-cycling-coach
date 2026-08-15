@@ -11,7 +11,7 @@ from src.ai.plan_generator import (
     generate_sessions,
     clear_derived_plan_data,
 )
-from src.ai.plan_adaptor import adapt_plan
+from src.ai.plan_adaptor import adapt_plan, adapt_sessions
 from src.ai.chat_session import ChatSession
 from src.ai.tools import TOOLS, TOOL_STATUS_MESSAGES, execute_tools
 from src.constants import AI_MODEL
@@ -49,6 +49,8 @@ class PlanAdaptorWorker(QThread):
 
     finished = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
+    sessions_failed = pyqtSignal()
+    sessions_incomplete = pyqtSignal(int)
 
     def __init__(self, activity_client: IntervalsClient):
         super().__init__()
@@ -57,9 +59,30 @@ class PlanAdaptorWorker(QThread):
     def run(self) -> None:
         try:
             plan = adapt_plan(self.activity_client)
-            self.finished.emit(plan)
         except Exception as exc:
+            logger.exception("plan adaptor failed")
             self.error_occurred.emit(str(exc))
+            return
+
+        sessions_failed = False
+        dropped_rows = 0
+        try:
+            _, dropped_rows = adapt_sessions(plan)
+        except Exception:
+            logger.exception(
+                "session CSV generation failed after successful plan adaptation"
+            )
+            sessions_failed = True
+
+        # Emit finished first so the adapted plan is on screen before the
+        # sessions_failed/sessions_incomplete warning appears — otherwise the
+        # modal warning blocks rendering and the user sees a dialog with no
+        # context yet.
+        self.finished.emit(plan)
+        if sessions_failed:
+            self.sessions_failed.emit()
+        elif dropped_rows:
+            self.sessions_incomplete.emit(dropped_rows)
 
 
 class ChatWorker(QThread):

@@ -133,7 +133,11 @@ class TestBuildSystem:
     @staticmethod
     def _text(session: ChatSession) -> str:
         # build_system() returns content blocks, not plain text — flatten for assertions.
-        return "".join(block["text"] for block in session.build_system())
+        # GOALS_PATH is patched to a nonexistent file so these tests stay isolated from
+        # the real ~/.my-ai-cycling-coach/goals.json; goal-specific behavior has its own
+        # test class (TestBuildSystemLiveGoals) below.
+        with patch("src.goals.GOALS_PATH", Path("/nonexistent/goals.json")):
+            return "".join(block["text"] for block in session.build_system())
 
     def test_always_contains_base_prompt(self, tmp_path: Path) -> None:
         session = self._make_session(tmp_path)
@@ -186,6 +190,7 @@ class TestBuildSystem:
                 tmp_path / "missing_adapted.csv",
             ),
             patch("src.ai.chat_session.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing_goals.json"),
         ):
             blocks = session.build_system()
         text = "".join(b["text"] for b in blocks)
@@ -206,6 +211,7 @@ class TestBuildSystem:
                 tmp_path / "missing_adapted.csv",
             ),
             patch("src.ai.chat_session.SESSIONS_LOG_PATH", tmp_path / "missing.json"),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing_goals.json"),
         ):
             blocks = session.build_system()
         assert blocks[0]["cache_control"] == {"type": "ephemeral"}
@@ -223,10 +229,72 @@ class TestBuildSystem:
                 "src.ai.chat_session.SESSIONS_ADAPTED_PATH",
                 tmp_path / "missing_adapted.csv",
             ),
+            patch("src.goals.GOALS_PATH", tmp_path / "missing_goals.json"),
         ):
             blocks = session.build_system()
         assert len(blocks) == 1
         assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+
+
+class TestBuildSystemLiveGoals:
+    def _make_session(self, tmp_path: Path) -> ChatSession:
+        with (
+            patch("src.ai.chat_session.PLAN_ORIGINAL_PATH", tmp_path / "a.md"),
+            patch("src.ai.chat_session.PLAN_ADAPTED_PATH", tmp_path / "b.md"),
+        ):
+            return ChatSession()
+
+    def _blocks(self, session: ChatSession, tmp_path: Path, goals_path: Path) -> list:
+        with (
+            patch(
+                "src.ai.chat_session.SESSIONS_ORIGINAL_PATH", tmp_path / "missing.csv"
+            ),
+            patch(
+                "src.ai.chat_session.SESSIONS_ADAPTED_PATH",
+                tmp_path / "missing_adapted.csv",
+            ),
+            patch("src.goals.GOALS_PATH", goals_path),
+        ):
+            return session.build_system()
+
+    def test_includes_live_profile_section(self, tmp_path: Path) -> None:
+        session = self._make_session(tmp_path)
+        goals_path = tmp_path / "goals.json"
+        goals_path.write_text(json.dumps({"current_ftp_watts": 343}))
+        blocks = self._blocks(session, tmp_path, goals_path)
+        text = "".join(b["text"] for b in blocks)
+        assert "Current athlete profile (live)" in text
+        assert "343 W" in text
+
+    def test_profile_section_is_in_volatile_block(self, tmp_path: Path) -> None:
+        session = self._make_session(tmp_path)
+        goals_path = tmp_path / "goals.json"
+        goals_path.write_text(json.dumps({"current_ftp_watts": 343}))
+        blocks = self._blocks(session, tmp_path, goals_path)
+        assert "cache_control" not in blocks[-1]
+        assert "Current athlete profile" in blocks[-1]["text"]
+
+    def test_no_profile_section_when_goals_missing(self, tmp_path: Path) -> None:
+        session = self._make_session(tmp_path)
+        blocks = self._blocks(session, tmp_path, tmp_path / "missing_goals.json")
+        text = "".join(b["text"] for b in blocks)
+        assert "Current athlete profile" not in text
+        assert len(blocks) == 1
+
+    def test_edited_goals_reflected_without_reload(self, tmp_path: Path) -> None:
+        session = self._make_session(tmp_path)
+        goals_path = tmp_path / "goals.json"
+        goals_path.write_text(json.dumps({"current_ftp_watts": 325}))
+        first_text = "".join(
+            b["text"] for b in self._blocks(session, tmp_path, goals_path)
+        )
+        goals_path.write_text(json.dumps({"current_ftp_watts": 343}))
+        second_text = "".join(
+            b["text"] for b in self._blocks(session, tmp_path, goals_path)
+        )
+        assert "325 W" in first_text
+        assert "343 W" not in first_text
+        assert "343 W" in second_text
 
 
 class TestBuildSessionTable:

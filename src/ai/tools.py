@@ -9,6 +9,7 @@ from anthropic.types import ContentBlock, ToolParam, ToolUseBlock
 
 from src.constants import ACTIVITY_HISTORY_WEEKS, GOALS_PATH
 from src.data.intervals_api import IntervalsClient
+from src.goals import load_goals
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
     elevation_changes,
@@ -286,13 +287,6 @@ def _fmt_duration(seconds: float) -> str:
     return f"{h}h{m:02d}m{s:02d}s" if h > 0 else f"{m}m{s:02d}s"
 
 
-def _load_goals() -> dict:
-    try:
-        return json.loads(GOALS_PATH.read_text())
-    except Exception:
-        return {}
-
-
 def _get_activity_details(activity_client: IntervalsClient, activity_id: str) -> str:
     try:
         activity = activity_client.download_activity(activity_id)
@@ -465,7 +459,7 @@ def _get_activity_training_load(
     time_array = activity.get_time_array()
     mask = moving_mask(activity)
     times = time_summary(activity)
-    goals = _load_goals()
+    goals = load_goals()
     ftp = int(goals.get("current_ftp_watts") or 0)
     weight = float(goals.get("weight_kg") or 0)
 
@@ -603,7 +597,7 @@ def _get_activity_intervals(activity_client: IntervalsClient, activity_id: str) 
     time_array = np.asarray(time_array, dtype=float)[:n]
     power = np.asarray(power, dtype=float)[:n]
 
-    goals = _load_goals()
+    goals = load_goals()
     ftp = int(goals.get("current_ftp_watts") or 0) or None
 
     intervals = detect_intervals(time_array, power, ftp=ftp)

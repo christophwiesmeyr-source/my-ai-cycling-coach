@@ -86,16 +86,10 @@ class TestBuildPlanHeader:
         goals = {"main_goal": "Race"}
         assert _build_plan_header(goals).endswith("---")
 
-    def test_empty_goals_produces_empty_table(self) -> None:
-        header = _build_plan_header({})
-        assert "| Parameter | Value |" in header
-        # No data rows beyond the header
-        lines = [
-            line
-            for line in header.splitlines()
-            if line.startswith("|") and "Parameter" not in line and "---" not in line
-        ]
-        assert lines == []
+    def test_empty_goals_produces_empty_string(self) -> None:
+        # format_goals_table (src/goals.py) returns "" for empty goals; this
+        # never happens in practice since the UI form always sets main_goal.
+        assert _build_plan_header({}) == ""
 
 
 # ---------------------------------------------------------------------------

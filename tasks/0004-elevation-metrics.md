@@ -1,6 +1,6 @@
 ---
 title: Add elevation metrics to tooling
-status: ready   # see tasks/WORKFLOW.md for the lifecycle
+status: done   # see tasks/WORKFLOW.md for the lifecycle
 release: v4       # see tasks/WORKFLOW.md; can be set before status: ready
 ---
 
@@ -33,30 +33,30 @@ duplicating a one-off verification script here.
 
 ## Acceptance Criteria
 
-- [ ] A per-sample `grade` column (instantaneous % slope, smoothed) is
+- [x] A per-sample `grade` column (instantaneous % slope, smoothed) is
       added to `Activity.data` whenever both `altitude` and `distance`
       streams are present, so it is automatically selectable in the main
       window's primary/secondary metric plot dropdowns — no dedicated UI
       code needed, matching how `altitude` already appears there today.
-- [ ] `get_activity_details` reports, inside the existing `Elevation:`
+- [x] `get_activity_details` reports, inside the existing `Elevation:`
       block (alongside Ascent/Descent), the activity's max grade, average
       grade while climbing, total climbing time, and ascent per km — a
       hilliness indicator that (unlike a global/net average grade) stays
       meaningful for loop rides, where ascents and descents cancel out to
       near-zero regardless of how hilly the route actually was.
-- [ ] "Climbing" is defined as: moving time where the smoothed grade
+- [x] "Climbing" is defined as: moving time where the smoothed grade
       exceeds a fixed threshold (3%). This is a single aggregate number,
       not per-climb segments (start/end of individual climbs is out of
       scope — see below).
-- [ ] Activities missing `altitude` and/or `distance` data (e.g. indoor
+- [x] Activities missing `altitude` and/or `distance` data (e.g. indoor
       trainer rides without GPS) continue to work unchanged: no `grade`
       column, no grade/climbing lines in AI output, no errors.
-- [ ] Periods where the rider is stationary (near-zero horizontal distance
+- [x] Periods where the rider is stationary (near-zero horizontal distance
       over the smoothing window) do not produce spurious extreme grade
       values — grade is `NaN` there rather than a divide-by-near-zero
       spike, matching how `elevation_changes` already avoids GPS/barometric
       jitter artifacts.
-- [ ] `get_activity_details`'s tool description (`src/ai/tools.py:49-53`)
+- [x] `get_activity_details`'s tool description (`src/ai/tools.py:49-53`)
       is rewritten to accurately list everything the tool currently
       returns, not just the new grade/climbing-time fields. It's
       currently both stale and wrong: it claims "best rolling power
@@ -258,6 +258,45 @@ duplicating a one-off verification script here.
 
 ## Implementation Notes
 
-<!-- Filled in during/after implementation, not during drafting. What was
-     actually built, especially where it deviates from Technical
-     Decisions and why, plus any concrete results worth recording. -->
+Implemented as specified in Technical Decisions, with one simplification:
+`_build_activity` computes `time_array` directly from the raw `time`
+stream values (`np.asarray(time_values, dtype=float)`) rather than
+re-deriving it from the assembled `timestamp` column — the `time` stream
+*is* seconds-since-start already, so this avoids an unnecessary
+timestamp/Timedelta round trip. Same numeric result, one less step.
+
+`grade_series` guards short/empty input the same way `elevation_changes`
+does (returns an all-`NaN` array rather than raising), and returns
+all-`NaN` when `distance` is absent/too short — this made
+`climbing_time_s` and the `weighted_average(..., mask=grade > threshold)`
+call in `_get_activity_details` NaN-safe without extra special-casing.
+
+`_smoothed_altitude` was extracted from `elevation_changes` exactly as
+described, with one added guard: it now only attempts NaN-interpolation
+when at least one valid sample exists (`valid.any()`), so an all-`NaN`
+altitude column (which can't happen via `elevation_changes`'s existing
+early-return, but can be reached from `grade_series`, which has no
+equivalent guard) doesn't hit `np.interp` with an empty `idx[valid]`.
+
+Manual verification (Test Plan) done against a real activity
+(`i175513208`, a MountainBikeRide with genuine climbing) via
+`python -m src.data.inspect_activity`:
+- `grade` appeared in `available_metrics` with plausible stats (min
+  -69%, max 26%, mean 3.9 — consistent with a hilly MTB loop).
+- `get_activity_details` output: `Ascent: 792 m (39 m/km)`,
+  `Max grade: 26%`, `Avg grade (climbing): 9%`,
+  `Climbing time: 1h09m58s (grade > 3%)` — all plausible against
+  ~1h49m moving time.
+- Every section the rewritten tool description claims (time, elevation,
+  averages, peaks) appeared in the dump; no claimed section was absent.
+  Pedalling wasn't present in this particular dump (no power/cadence
+  data on this activity) — correctly conditional, not a description
+  mismatch.
+- Grade plot: drove the real `PlotWidget.plot_activity` with the
+  downloaded activity (`primary_metric="grade"`, `secondary_metric=
+  "altitude"`) under the live display and screenshotted it — grade
+  visibly spikes positive on climbs and deeply negative on descents,
+  tracking the altitude profile, consistent with the stats above.
+  GUI wasn't driven via full manual clicking (no project `run` skill
+  existed for this app yet), but the actual `PlotWidget` and downloaded
+  `Activity` were exercised end-to-end, not a reimplementation.

@@ -23,10 +23,12 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 import requests
 
 from .activity import Activity
+from src.analysis.activity_metrics import grade_series
 from src.constants import INTERVALS_CONFIG_PATH
 
 
@@ -164,6 +166,13 @@ class IntervalsClient:
             values = by_type.get(stream_key)
             if values is not None:
                 data[column_name] = values
+
+        # Derived here (data layer calling into analysis) rather than at each
+        # consumer, so the UI plot dropdown and the AI tool see the same
+        # precomputed column instead of needing two derivation paths.
+        if "altitude" in data and "distance" in data:
+            time_array = np.asarray(time_values, dtype=float)
+            data["grade"] = grade_series(data["altitude"], data["distance"], time_array)
 
         # No per-sample "moving" stream is mapped (intervals.icu doesn't
         # expose Strava's boolean moving stream); total_moving_time from

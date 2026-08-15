@@ -12,6 +12,8 @@ from src.data.intervals_api import IntervalsClient
 from src.goals import load_goals
 from src.analysis.statistics import rolling_max
 from src.analysis.activity_metrics import (
+    CLIMBING_GRADE_THRESHOLD_PCT,
+    climbing_time_s,
     elevation_changes,
     heart_rate_recovery_60s,
     moving_mask,
@@ -48,9 +50,13 @@ TOOLS: list[ToolParam] = [
     {
         "name": "get_activity_details",
         "description": (
-            "Download detailed metrics for a specific activity: duration, distance, "
-            "average and max power, best rolling power efforts (1 min, 10 min, 20 min), "
-            "and average/max heart rate. Use the activity ID returned by list_recent_activities."
+            "Download detailed metrics for a specific activity: duration and distance; "
+            "time accounting (elapsed, moving, stopped, stop count); elevation (ascent "
+            "with ascent per km, descent, max grade, average climbing grade, climbing "
+            "time above a 3% grade threshold); moving-vs-full averages for power, heart "
+            "rate, speed, cadence, and temperature; pedalling power and coasting share; "
+            "and peak power/heart rate. Use the activity ID returned by "
+            "list_recent_activities."
         ),
         "input_schema": {
             "type": "object",
@@ -301,8 +307,13 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
     lines.append(f"Sport: {activity.sport}")
 
     distance = activity.get_time_series("distance")
-    if distance is not None and len(distance) > 0:
-        lines.append(f"Distance: {float(distance[-1]) / 1000:.1f} km")
+    distance_km = (
+        float(distance[-1]) / 1000
+        if distance is not None and len(distance) > 0
+        else None
+    )
+    if distance_km is not None:
+        lines.append(f"Distance: {distance_km:.1f} km")
 
     # Time accounting
     lines.append("Time:")
@@ -321,8 +332,23 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
     )
     if ascent or descent:
         lines.append("Elevation:")
-        lines.append(f"  Ascent: {ascent:.0f} m")
+        ascent_extra = f" ({ascent / distance_km:.0f} m/km)" if distance_km else ""
+        lines.append(f"  Ascent: {ascent:.0f} m{ascent_extra}")
         lines.append(f"  Descent: {descent:.0f} m")
+
+        grade = activity.get_time_series("grade")
+        if grade is not None and len(grade) > 0 and not np.all(np.isnan(grade)):
+            lines.append(f"  Max grade: {np.nanmax(grade):.0f}%")
+            avg = weighted_average(
+                grade, time_array, mask=grade > CLIMBING_GRADE_THRESHOLD_PCT
+            )
+            if avg is not None:
+                climbing_s = climbing_time_s(grade, time_array)
+                lines.append(f"  Avg grade (climbing): {avg:.0f}%")
+                lines.append(
+                    f"  Climbing time: {_fmt_duration(climbing_s)} "
+                    f"(grade > {CLIMBING_GRADE_THRESHOLD_PCT:.0f}%)"
+                )
 
     # Averages: moving vs full where a moving mask is available
     dual = mask is not None

@@ -54,6 +54,7 @@ def _real_activity(
     cadence: Any = 85.0,
     speed: Any = 8.0,
     altitude: Any = None,
+    temperature: Any = None,
     moving: Any = True,
     sport: str = "Ride",
     elapsed: Optional[float] = None,
@@ -83,6 +84,8 @@ def _real_activity(
         cols["speed"] = _col(speed)
     if altitude is not None:
         cols["altitude"] = _col(altitude)
+    if temperature is not None:
+        cols["temperature"] = _col(temperature)
     cols["distance"] = np.cumsum(_col(speed if speed is not None else 8.0)) * dt
     if moving is not None:
         cols["moving"] = (
@@ -334,6 +337,18 @@ class TestGetActivityDetails:
         result = _get_activity_details(client, "42")
         assert "Failed to download activity 42" in result
         assert "timeout" in result
+
+    def test_temperature_line_present_when_series_available(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=19.0)
+        result = _get_activity_details(client, "42")
+        assert "Temperature: 19 | 19 °C" in result
+
+    def test_temperature_line_absent_when_series_missing(self) -> None:
+        client = Mock()
+        client.download_activity.return_value = _real_activity(n=300, temperature=None)
+        result = _get_activity_details(client, "42")
+        assert "Temperature" not in result
 
 
 # ---------------------------------------------------------------------------

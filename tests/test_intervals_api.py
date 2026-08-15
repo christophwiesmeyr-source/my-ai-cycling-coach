@@ -133,6 +133,7 @@ class TestDownloadActivity:
             {"type": "distance", "data": [i * 10 for i in range(n)]},
             {"type": "altitude", "data": [100] * n},
             {"type": "velocity_smooth", "data": [8.0] * n},
+            {"type": "temp", "data": [18.5] * n},
         ]
 
     def test_builds_activity_with_all_streams(
@@ -160,6 +161,22 @@ class TestDownloadActivity:
         assert list(activity.get_time_series("heart_rate")) == [140] * 5
         assert list(activity.get_time_series("cadence")) == [85] * 5
         assert list(activity.get_time_series("speed")) == [8.0] * 5
+        assert list(activity.get_time_series("temperature")) == [18.5] * 5
+
+    def test_no_temp_stream_leaves_temperature_column_absent(
+        self, mock_client: IntervalsClient
+    ) -> None:
+        metadata = {"start_date_local": "2026-06-01T10:00:00", "type": "Ride"}
+        streams = [s for s in self._streams() if s["type"] != "temp"]
+        responses = [
+            Mock(status_code=200, json=Mock(return_value=metadata)),
+            Mock(status_code=200, json=Mock(return_value=streams)),
+        ]
+        with patch("requests.get", side_effect=responses):
+            activity = mock_client.download_activity("i67890")
+
+        assert "temperature" not in activity.data.columns
+        assert list(activity.get_time_series("temperature")) == []
 
     def test_missing_time_stream_raises(self, mock_client: IntervalsClient) -> None:
         metadata = {"start_date_local": "2026-06-01T10:00:00", "type": "Ride"}

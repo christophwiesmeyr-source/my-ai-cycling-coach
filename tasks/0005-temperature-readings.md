@@ -1,6 +1,6 @@
 ---
 title: Add temperature readings to coach tooling
-status: ready   # see tasks/WORKFLOW.md for the lifecycle
+status: done   # see tasks/WORKFLOW.md for the lifecycle
 release: v4     # see tasks/WORKFLOW.md; can be set before status: ready
 ---
 
@@ -12,12 +12,12 @@ intervals.icu's activity streams endpoint supports a `temp` stream type (mirrori
 
 ## Acceptance Criteria
 
-- [ ] intervals.icu's `temp` stream is fetched and mapped to a `temperature` column on `Activity.data`.
-- [ ] Temperature is selectable in the existing primary/secondary metric plot dropdowns (main window), the same way heart rate/cadence/etc. are today — no dedicated UI code needed since dropdowns and plotting already derive from `Activity.available_metrics`.
-- [ ] The AI coach's `get_activity_details` tool reports average temperature (moving | full, matching the existing dual-average pattern used for power/HR/speed/cadence) when temperature data is present for the activity.
-- [ ] Activities without a temperature stream (e.g. indoor trainer rides, or outdoor rides recorded on a device/sensor without a thermometer) continue to work unchanged: no temperature column, no temperature line in AI output, no errors.
-- [ ] The `temp` -> `temperature` field-name mapping has been verified against a real intervals.icu API response for an activity known to have recorded temperature, per the note in `intervals_api.py`'s module docstring that stream field names were never independently confirmed live.
-- [ ] A standalone CLI script exists that downloads one real activity by id via `IntervalsClient` and dumps (a) the raw stream summary (`available_metrics` plus per-metric count/min/max/mean) and (b) the output of every read-only AI coach tool (`get_activity_details`, `get_activity_power_curve`, `get_activity_training_load`, `get_activity_efficiency`, `get_activity_intervals`, `get_activity_zones`) for that activity — used to do the field-mapping verification above, and kept as a reusable dev tool for verifying future data/tool changes against a live activity.
+- [x] intervals.icu's `temp` stream is fetched and mapped to a `temperature` column on `Activity.data`.
+- [x] Temperature is selectable in the existing primary/secondary metric plot dropdowns (main window), the same way heart rate/cadence/etc. are today — no dedicated UI code needed since dropdowns and plotting already derive from `Activity.available_metrics`.
+- [x] The AI coach's `get_activity_details` tool reports average temperature (moving | full, matching the existing dual-average pattern used for power/HR/speed/cadence) when temperature data is present for the activity.
+- [x] Activities without a temperature stream (e.g. indoor trainer rides, or outdoor rides recorded on a device/sensor without a thermometer) continue to work unchanged: no temperature column, no temperature line in AI output, no errors.
+- [x] The `temp` -> `temperature` field-name mapping has been verified against a real intervals.icu API response for an activity known to have recorded temperature, per the note in `intervals_api.py`'s module docstring that stream field names were never independently confirmed live.
+- [x] A standalone CLI script exists that downloads one real activity by id via `IntervalsClient` and dumps (a) the raw stream summary (`available_metrics` plus per-metric count/min/max/mean) and (b) the output of every read-only AI coach tool (`get_activity_details`, `get_activity_power_curve`, `get_activity_training_load`, `get_activity_efficiency`, `get_activity_intervals`, `get_activity_zones`) for that activity — used to do the field-mapping verification above, and kept as a reusable dev tool for verifying future data/tool changes against a live activity.
 
 ## Technical Decisions
 
@@ -47,6 +47,78 @@ intervals.icu's activity streams endpoint supports a `temp` stream type (mirrori
 
 ## Implementation Notes
 
-<!-- Filled in during/after implementation, not during drafting. What was
-     actually built, especially where it deviates from Technical
-     Decisions and why, plus any concrete results worth recording. -->
+Implemented exactly as drafted in Technical Decisions, no deviations:
+
+- `src/data/intervals_api.py`: added `"temp"` to `STREAM_TYPES` and
+  `"temp": "temperature"` to `field_mapping` in `_build_activity`. Module
+  docstring's "not independently verified" list updated to include `temp`
+  (superseded below — it *has* now been verified live) and points to the
+  new `inspect_activity.py` script for future verification needs.
+- `src/ai/tools.py`: added
+  `_avg_line("Temperature", activity.get_time_series("temperature"), "°C")`
+  in `_get_activity_details`, immediately after the Cadence line. No other
+  tool touched (efficiency/decoupling intentionally out of scope).
+- New `src/data/inspect_activity.py`: `python -m src.data.inspect_activity
+  <activity_id>`, following the `export_for_bench.py` precedent exactly —
+  standalone script, default-constructed `IntervalsClient()`, typed defs
+  throughout, `print()` for output (CLAUDE.md's standalone-script
+  exception). Prints `activity.available_metrics` plus
+  `activity.data[metrics].describe()` (count/mean/std/min/25/50/75/max —
+  a superset of the required count/min/max/mean), then builds one
+  `ToolUseBlock` per read-only tool and prints `_execute_tool`'s output for
+  each, exercising the real production dispatch path. Not wired into
+  pytest (needs live credentials/network).
+- Tests: `tests/test_intervals_api.py` — added a `temp` stream to the
+  shared `_streams()` fixture (asserted in
+  `test_builds_activity_with_all_streams`) plus a new
+  `test_no_temp_stream_leaves_temperature_column_absent`.
+  `tests/test_ai_tools.py` — added a `temperature` parameter to the
+  `_real_activity` test helper and two new tests in
+  `TestGetActivityDetails` (`test_temperature_line_present_when_series_available`,
+  `test_temperature_line_absent_when_series_missing`).
+
+**Live verification** (this environment had a working intervals.icu API
+key and network access, so the manual/live Test Plan items were actually
+run, not just read through):
+
+- `python -m src.data.inspect_activity i175720350` (a real outdoor "Ride",
+  2026-08-14) confirmed the `temp` stream is real and non-empty:
+  `temperature` appeared in `available_metrics` with plausible values
+  (24–31°C, mean 27°C — a hot summer ride), and `get_activity_details`
+  printed `Temperature: 27 °C` in the Averages section. This confirms both
+  the `temp` field name and the Celsius unit assumption — no label change
+  needed.
+- Note: live-downloaded activities never populate a `moving` column
+  (intervals.icu doesn't expose one — see the existing comment in
+  `_build_activity`), so `get_activity_details`'s Averages header is always
+  singular ("Averages:"), not the dual "(moving | full)" form, for real
+  data. This is pre-existing behavior of the dual-average pattern itself,
+  not something this story changed — Temperature follows the exact same
+  mechanism as Power/HR/Speed/Cadence and would show the dual form too if
+  the data source ever provided a moving stream.
+- `python -m src.data.inspect_activity i161860195` (a real outdoor "Ride"
+  from a device/sensor without a thermometer — no `temp` stream) completed
+  with exit code 0, no errors: `temperature` absent from
+  `available_metrics`, no `Temperature` line in `get_activity_details`
+  output, and every other tool call still worked normally. Also spot
+  checked a `VirtualRide` (indoor trainer, `i161860693`) and found it
+  *did* have a `temp` stream (13–20°C, plausibly a room/garage sensor) —
+  worth noting that "indoor trainer" and "no temperature data" aren't
+  reliably the same thing in real data, though several other real outdoor
+  rides (`i161860186`, `i161860213`, `i161860246`, `i161860250`,
+  `i161860253`, `i161860424`, `i161860444`) also lacked a `temp` stream and
+  confirm the no-data path works regardless of sport type.
+- The primary/secondary metric dropdown Test Plan item (syncing via the
+  Training tab and visually confirming "temperature" appears and plots)
+  was **NOT independently verified live** — this is a background/headless
+  execution environment with no display to run the Qt GUI. What was
+  confirmed instead: `main_window.py`'s `_update_metric_dropdowns` reads
+  directly from `activity.available_metrics` with no filtering, and the
+  live download of `i175720350` above produced
+  `available_metrics == ['distance', 'altitude', 'heart_rate', 'cadence',
+  'power', 'speed', 'temperature']` — i.e. the exact data the dropdown
+  would populate from does include `temperature` for a real synced
+  activity. The GUI-level visual check is left for the user to confirm.
+
+All of `pytest` (268 tests, all passing), `ruff check .`, `ruff format .`,
+and `mypy ./` (53 source files, no issues) pass with no failures.

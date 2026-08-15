@@ -360,6 +360,7 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
         "Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}"
     )
     _avg_line("Cadence", activity.get_time_series("cadence"), "rpm")
+    _avg_line("Temperature", activity.get_time_series("temperature"), "°C")
 
     if avg_lines:
         lines.append(header)

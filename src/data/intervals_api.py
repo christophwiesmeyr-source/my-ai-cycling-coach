@@ -12,10 +12,11 @@ Field-name mapping below is based on intervals.icu's published API docs and
 community examples (the docs page itself is a JS-rendered Swagger UI that
 couldn't be fully introspected offline). The activity-list `id` field shape
 has been confirmed against a live response; the per-activity metadata fields
-and stream type names (watts/heartrate/cadence/altitude/velocity_smooth) have
-NOT been independently verified — check them against a real
+and stream type names (watts/heartrate/cadence/altitude/velocity_smooth/temp)
+have NOT been independently verified — check them against a real
 download_activity() call and adjust _normalize_activity / _build_activity if
-any don't match.
+any don't match. `src/data/inspect_activity.py` is a standalone dev script
+for exactly this kind of live verification.
 """
 
 import json
@@ -38,7 +39,7 @@ class IntervalsClient:
 
     CONFIG_FILE = INTERVALS_CONFIG_PATH
     BASE_URL = "https://intervals.icu/api/v1"
-    STREAM_TYPES = "time,watts,heartrate,cadence,distance,altitude,velocity_smooth"
+    STREAM_TYPES = "time,watts,heartrate,cadence,distance,altitude,velocity_smooth,temp"
 
     def __init__(self, api_key: Optional[str] = None, athlete_id: Optional[str] = None):
         config = self._load_config()
@@ -157,6 +158,7 @@ class IntervalsClient:
             "cadence": "cadence",
             "watts": "power",
             "velocity_smooth": "speed",
+            "temp": "temperature",
         }
         for stream_key, column_name in field_mapping.items():
             values = by_type.get(stream_key)

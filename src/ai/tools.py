@@ -341,6 +341,7 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
         unit: str,
         scale: float = 1.0,
         fmt: str = "{:.0f}",
+        extra: str = "",
     ) -> None:
         full = weighted_average(series, time_array)
         if full is None:
@@ -349,10 +350,12 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
             mv = weighted_average(series, time_array, mask)
             mv_str = fmt.format(mv * scale) if mv is not None else "—"
             avg_lines.append(
-                f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}".rstrip()
+                f"  {label}: {mv_str} | {fmt.format(full * scale)} {unit}{extra}".rstrip()
             )
         else:
-            avg_lines.append(f"  {label}: {fmt.format(full * scale)} {unit}".rstrip())
+            avg_lines.append(
+                f"  {label}: {fmt.format(full * scale)} {unit}{extra}".rstrip()
+            )
 
     _avg_line("Power", activity.get_time_series("power"), "W")
     _avg_line("Heart rate", activity.get_time_series("heart_rate"), "bpm")
@@ -360,6 +363,22 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
         "Speed", activity.get_time_series("speed"), "km/h", scale=3.6, fmt="{:.1f}"
     )
     _avg_line("Cadence", activity.get_time_series("cadence"), "rpm")
+
+    # Min/max range is only shown alongside the average when it's actually
+    # informative — a near-constant reading (rounds to the same value as
+    # both ends) would just repeat the average line.
+    temperature = activity.get_time_series("temperature")
+    temp_extra = ""
+    if temperature is not None and len(temperature) > 0:
+        temp_arr = np.asarray(temperature, dtype=float)
+        if not np.all(np.isnan(temp_arr)):
+            lo, hi = (
+                round(float(np.nanmin(temp_arr))),
+                round(float(np.nanmax(temp_arr))),
+            )
+            if lo != hi:
+                temp_extra = f" ({lo:.0f}–{hi:.0f}°C range)"
+    _avg_line("Temperature", temperature, "°C", extra=temp_extra)
 
     if avg_lines:
         lines.append(header)
@@ -393,7 +412,6 @@ def _get_activity_details(activity_client: IntervalsClient, activity_id: str) ->
             lines += ped_lines
 
     # Peaks
-    hr = activity.get_time_series("heart_rate")
     hr = activity.get_time_series("heart_rate")
     peaks = []
     if power is not None and len(power) > 0 and not np.all(np.isnan(power)):

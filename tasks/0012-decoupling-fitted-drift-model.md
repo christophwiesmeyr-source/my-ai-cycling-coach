@@ -65,10 +65,36 @@ HR) are the limiting case.
 Story 01 fixes the intercept and VI artifacts cheaply. It does **not** address
 three remaining structural problems:
 
-**1. The half-split is a spreadsheet-era hack.** It discards the ordering
-information within each half, collapses each to a single mean (wasteful of
-variance), and yields a total that depends on how long the ride happened to be
-rather than a rate.
+**1. The half-split is a spreadsheet-era hack, and its output scales with ride
+duration.** It discards the ordering information within each half and collapses
+each to a single mean (wasteful of variance). Worse, it reports a total rather
+than a rate. If drift is linear at γ bpm/hr, the half means sit at t = T/4 and
+t = 3T/4, so with power held constant
+
+    Pw:Hr ≈ γ·T / (2·HR)
+
+The reported number is proportional to ride duration, which makes the fixed 5%
+threshold a *different physiological criterion at every duration*. At HR 140,
+5% implies ΔHR ≈ 7 bpm between half means, i.e. γ ≈ 9.3 bpm/hr on a 1.5 h ride,
+4.7 on a 3 h ride, 2.3 on a 6 h ride — a fourfold range of drift rates all
+receiving the identical flag, with the physiologically most impressive ride
+treated worst.
+
+This also corrupts the common coaching practice of tracking decoupling across a
+season, because ride duration correlates with training phase (long steady base
+blocks, shorter harder build blocks). Reported decoupling then falls on moving
+from base to build for purely arithmetic reasons, precisely when a coach is
+looking for evidence that the base work succeeded. Seasonal temperature is a
+second confound pointing the same way. β₂ removes the duration one entirely.
+
+Note also that duration governs *precision*: SE(β₂) ≈ σ_ε / (√n_eff · SD(t)),
+and since n_eff grows roughly linearly with T while SD(t) = T/√12, SE(β₂)
+scales like T^(−3/2). A 6 h ride estimates β₂ roughly eight times more
+precisely than a 90 min one. This is a better-founded version of the
+TrainingPeaks heuristic that efforts under 20 minutes are not valid: rather
+than a duration cutoff, report β₂ with its confidence interval and let short
+rides come back wide. "Drift 2.1 ± 4.8 bpm/hr" is honest where "3.2%
+decoupling" from the same ride is false precision.
 
 **2. A scalar cannot separate the two mechanisms.** Cardiac drift and
 efficiency loss are physiologically distinct and warrant different responses,
@@ -103,16 +129,43 @@ Fit per activity, on centered variables, using lagged power P̃ rather than raw
 power (raw power traces a hysteresis loop against HR: below the line on rising
 power, above it on falling):
 
-    HR = β₀ + β₁·P̃c + β₂·tc + β₃·(tc·P̃c) + ε
+    HR = β₀ + β₁·(P̃ − P_ref) + β₂·(t − t_ref) + β₃·(t − t_ref)(P̃ − P_ref) + ε
 
-with P̃c = P̃ − median(P̃) and tc = t − T/2 in hours. Centering does not change
-the fit but is essential to interpretation: uncentered, β₂ would be the drift
-rate *at zero watts*, an extrapolation to a point never occupied. Centered:
+with t in hours. Centering does not change the fit but is essential to
+interpretation: uncentered, β₂ would be the drift rate *at zero watts*, an
+extrapolation to a point never occupied. Centered:
 
-- β₀ = HR at typical power, mid-ride
+- β₀ = HR at P_ref, at t_ref
 - β₁ = k, marginal cardiac cost, bpm/W
-- **β₂ = drift at typical ride power, bpm/hr** ← the headline coach output
+- **β₂ = drift at P_ref, bpm/hr** ← the headline coach output
 - β₃ = change in marginal cost, bpm/W/hr
+
+**The reference point must be global, not per-ride.** An earlier draft of this
+story specified P_ref = median(P̃) of the ride and t_ref = T/2. That is correct
+for interpreting β₂ *within* a single ride, but it silently destroys
+cross-ride comparability: each ride's β₀ then sits at that ride's own median
+power and its own midpoint, so β₀ values cannot be compared across rides or
+tracked over a season. Fix P_ref and t_ref once per athlete (e.g. P_ref =
+200 W, t_ref = 1 h) and hold them constant across the whole history.
+
+This is what makes a **standardized EF** possible — the fitted surface
+evaluated at (P_ref, t_ref), rather than an average over whatever the ride
+happened to be. Duration, power level and VI all drop out, because the output
+is a point on a fitted relationship instead of a mean over the observed
+distribution. That is the longitudinal payoff: current practice can only
+compare EF between deliberately matched benchmark rides (same duration, same
+terrain, same intensity, ideally indoors), which discards nearly every ride an
+athlete actually does. This recovers a comparable number from ordinary rides.
+
+Caveat: standardizing to a fixed P_ref means extrapolating on rides whose power
+range does not cover it, using a slope attenuated by errors-in-variables (see
+below). The bias grows with distance from the ride's own power centroid. Gate
+the standardized EF on P_ref lying inside the ride's sampled power range. This
+is still a restriction, but a far weaker one than matched benchmark rides.
+
+Reporting both β₂ at the global P_ref and at the ride's own median may be
+worthwhile: the former for tracking, the latter for "what happened on this
+ride".
 
 This is one member of a family sharing a drift basis g(t):
 
@@ -126,6 +179,14 @@ reported metric, since it is the one form that makes no assumption about drift
 *shape*. Material disagreement between step and linear estimates indicates the
 shape is wrong. On 5+ hour rides the saturating basis is expected to fit
 noticeably better than linear.
+
+One caveat on duration-invariance. β₂ is invariant to T *under linearity*, by
+algebra. If drift actually saturates, a long ride samples more of the plateau
+and returns a lower β₂ — so β₂ becomes a duration-weighted average and is not
+strictly comparable between a 90 min Z2 ride and a 6 h event simulation. That
+residual dependence is real physiology, not an artifact, but it is the actual
+argument for the saturating basis: its asymptote and time constant T_c are
+duration-free where a slope is not.
 
 ### Known complications to address during design
 
@@ -174,6 +235,20 @@ structured verdict — `{drift_bpm_per_hr, slope_change, validity, confounders,
 ci}` — rather than raw values to interpret. An LLM given two EF numbers will
 pattern-match to the 5% heuristic every time, which is the original failure
 mode.
+
+### Prerequisite
+
+**Do not implement this until the offline validation study has shown β₂ to be
+recoverable and reliable.** The study is deliberately outside application
+development; see the separate handover brief. The specific risk is not bias but
+*reliability*: the SportRxiv variance decomposition attributes the collapse in
+dimensionality of field durability indices to the dominance of day-to-day
+variation. If the intraclass correlation of β₂ is low, per-ride β₂ is useless
+for tracking however well specified it is, only multi-ride aggregates carry
+signal, and the partial-pooling layer becomes mandatory rather than optional.
+That would not vindicate Pw:Hr — it fares worse on the same test — but it
+changes what the app should display, so it must be settled before the UI is
+designed around a per-ride number.
 
 Caveat to carry forward: this removes terrain and pacing as confounders. It
 does not separate thermoregulatory, plasma-volume and glycogen mechanisms —
